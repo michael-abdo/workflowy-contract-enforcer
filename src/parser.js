@@ -465,6 +465,73 @@ function getItemById(id) {
 }
 
 /**
+ * Get parent item of a given item
+ * @param {Object} item - Workflowy item
+ * @returns {Object|null} Parent item or null
+ */
+function getParentItem(item) {
+  if (!item || !item.data || !item.data.pa) return null;
+
+  const parentId = item.data.pa.id;
+  if (!parentId || parentId === 'None') return null;
+
+  return getItemById(parentId);
+}
+
+/**
+ * Find the nearest ancestor that is a contract
+ * @param {Object} item - Starting item
+ * @returns {Object|null} Contract ancestor item or null
+ */
+function findContractAncestor(item) {
+  let current = getParentItem(item);
+
+  while (current) {
+    const name = current.data.nm || '';
+    if (hasTag(name, CONTRACT_TAG)) {
+      return current;
+    }
+    current = getParentItem(current);
+  }
+
+  return null;
+}
+
+/**
+ * Get the current focused node from URL hash
+ * @returns {Object|null} Focused item or null
+ */
+function getFocusedItem() {
+  const hash = window.location.hash;
+  // Format: #/nodeId or #/nodeId?q=search
+  const match = hash.match(/^#\/([a-f0-9]+)/i);
+
+  if (match && match[1]) {
+    return getItemById(match[1]);
+  }
+
+  return null;
+}
+
+/**
+ * Check if currently inside a contract context (focused node is descendant of contract)
+ * @returns {Object|null} The contract ancestor, or null if not in contract context
+ */
+function getContractContext() {
+  const focused = getFocusedItem();
+  if (!focused) return null;
+
+  // Check if focused item itself is a contract
+  const name = focused.data.nm || '';
+  if (hasTag(name, CONTRACT_TAG)) {
+    return focused;
+  }
+
+  // Check ancestors
+  return findContractAncestor(focused);
+}
+
+/**
  * Build a store of all contract ideas for validation
  * @returns {Map<string, Object>} Map of idea ID to Idea object
  */
@@ -514,7 +581,11 @@ window.ContractParser = {
   parseContractFields,
   buildIdea,
   buildIdeaStore,
-  getItemById
+  getItemById,
+  getParentItem,
+  findContractAncestor,
+  getFocusedItem,
+  getContractContext
 };
 
 console.log('[Contract Parser] Loaded');

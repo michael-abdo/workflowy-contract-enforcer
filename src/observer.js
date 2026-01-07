@@ -523,6 +523,59 @@ class ContractObserver {
       this.validateNode(nodeId);
     }
   }
+
+  /**
+   * Handle navigation (URL change) - refresh store and update UI
+   */
+  refreshOnNavigation() {
+    console.log('[Observer] Navigation detected, refreshing...');
+
+    // Hide prompt immediately
+    if (window.ContractUI) {
+      window.ContractUI.hideNextField();
+    }
+
+    // Refresh store from new context
+    this.refreshStore();
+
+    // Re-validate all contracts to update UI
+    if (this.ideaStore.size > 0) {
+      this.validateAll();
+    } else {
+      // No contracts in direct view - check if we're inside a contract context
+      this.checkContractContext();
+    }
+
+    console.log('[Observer] Navigation refresh complete:', this.ideaStore.size, 'contracts in view');
+  }
+
+  /**
+   * Check if currently zoomed into a descendant of a contract
+   * If so, show the prompt for that contract
+   */
+  checkContractContext() {
+    if (!window.ContractParser || !window.ContractIntegrity) return;
+
+    const contractContext = window.ContractParser.getContractContext();
+
+    if (contractContext) {
+      console.log('[Observer] Inside contract context:', contractContext.data.nm);
+
+      // Build idea for the contract ancestor
+      const idea = window.ContractParser.buildIdea(contractContext);
+      if (idea) {
+        // Add to store temporarily
+        this.ideaStore.set(idea.id, idea);
+        this.trackedNodes.add(idea.id);
+
+        // Validate and show prompt
+        const validation = window.ContractIntegrity.validate_idea(this.ideaStore, idea);
+        if (window.ContractUI) {
+          window.ContractUI.showNextField(idea, validation);
+        }
+      }
+    }
+  }
 }
 
 // Create singleton instance

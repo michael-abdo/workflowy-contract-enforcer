@@ -159,7 +159,7 @@ function resolve_field(store, idea, field) {
     return { ok: true, value: get_local(idea, field), source: 'local', error: null };
   }
 
-  // Check inheritance pointer
+  // Check explicit inheritance pointer (mirror link)
   if (has_inherit_ptr(idea, field)) {
     const result = resolve_inherited(store, idea, field);
     if (result.ok) {
@@ -168,7 +168,46 @@ function resolve_field(store, idea, field) {
     return { ok: false, value: null, source: null, error: result.error };
   }
 
+  // Auto-inherit from parent contract (implicit inheritance)
+  const parentResult = resolve_from_parent_contract(store, idea, field);
+  if (parentResult.ok) {
+    return { ok: true, value: parentResult.value, source: 'parent', error: null };
+  }
+
   return { ok: false, value: null, source: null, error: 'unresolved' };
+}
+
+/**
+ * Try to resolve a field from parent contracts (automatic inheritance)
+ * @param {Map} store - Map of idea ID to Idea object
+ * @param {Object} idea - Current idea
+ * @param {string} field - Field name
+ * @returns {Object} { ok: boolean, value: *, error: string|null }
+ */
+function resolve_from_parent_contract(store, idea, field) {
+  // Walk up the parent chain looking for contracts with this field
+  for (const ancestor of ancestors(store, idea)) {
+    if (has_local_value(ancestor, field)) {
+      return { ok: true, value: get_local(ancestor, field), error: null };
+    }
+  }
+
+  // Also check via WF API if parent_id exists but not in store
+  if (idea.parent_id && window.ContractParser) {
+    const parentItem = window.ContractParser.getItemById(idea.parent_id);
+    if (parentItem) {
+      const parentContract = window.ContractParser.findContractAncestor({ data: { pa: { id: idea.parent_id } } });
+      if (parentContract) {
+        // Build parent idea and check for field
+        const parentIdea = window.ContractParser.buildIdea(parentContract);
+        if (parentIdea && has_local_value(parentIdea, field)) {
+          return { ok: true, value: get_local(parentIdea, field), error: null };
+        }
+      }
+    }
+  }
+
+  return { ok: false, value: null, error: 'no parent has field' };
 }
 
 /**

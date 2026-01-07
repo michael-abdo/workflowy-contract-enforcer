@@ -222,12 +222,51 @@ async function initializeContractEnforcer() {
     console.log("  contractEnforcer.getContracts()");
     console.log("  contractEnforcer.refresh()");
 
+    // Set up URL change detection for SPA navigation
+    setupUrlChangeDetection(Observer);
+
   } catch (e) {
     console.error("[Contract Enforcer] Initialization failed:", e);
     if (window.ContractUI) {
       window.ContractUI.showError('Initialization Failed', e.message);
     }
   }
+}
+
+/**
+ * Set up URL change detection for Workflowy SPA navigation
+ * @param {Object} observer - ContractObserver instance
+ */
+function setupUrlChangeDetection(observer) {
+  let lastHash = window.location.hash;
+  let debounceTimer = null;
+
+  const handleUrlChange = () => {
+    const currentHash = window.location.hash;
+
+    // Only react if hash actually changed
+    if (currentHash !== lastHash) {
+      console.log('[Contract Enforcer] URL changed:', lastHash, '->', currentHash);
+      lastHash = currentHash;
+
+      // Debounce to avoid rapid refreshes during navigation
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
+
+      debounceTimer = setTimeout(() => {
+        observer.refreshOnNavigation();
+      }, 150);
+    }
+  };
+
+  // Listen for hash changes (primary navigation method in Workflowy)
+  window.addEventListener('hashchange', handleUrlChange);
+
+  // Also listen for popstate (back/forward buttons)
+  window.addEventListener('popstate', handleUrlChange);
+
+  console.log('[Contract Enforcer] URL change detection active');
 }
 
 // Legacy wfExplore API (for backwards compatibility)

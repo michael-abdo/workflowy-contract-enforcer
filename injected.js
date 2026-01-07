@@ -241,12 +241,12 @@ function setupUrlChangeDetection(observer) {
   let lastHash = window.location.hash;
   let debounceTimer = null;
 
-  const handleUrlChange = () => {
+  const handleUrlChange = (source) => {
     const currentHash = window.location.hash;
 
     // Only react if hash actually changed
     if (currentHash !== lastHash) {
-      console.log('[Contract Enforcer] URL changed:', lastHash, '->', currentHash);
+      console.log('[Contract Enforcer] URL changed via', source + ':', lastHash, '->', currentHash);
       lastHash = currentHash;
 
       // Debounce to avoid rapid refreshes during navigation
@@ -261,12 +261,36 @@ function setupUrlChangeDetection(observer) {
   };
 
   // Listen for hash changes (primary navigation method in Workflowy)
-  window.addEventListener('hashchange', handleUrlChange);
+  window.addEventListener('hashchange', () => handleUrlChange('hashchange'));
 
   // Also listen for popstate (back/forward buttons)
-  window.addEventListener('popstate', handleUrlChange);
+  window.addEventListener('popstate', () => handleUrlChange('popstate'));
 
-  console.log('[Contract Enforcer] URL change detection active');
+  // Wrap History API to catch pushState/replaceState calls
+  const origPushState = history.pushState;
+  const origReplaceState = history.replaceState;
+
+  history.pushState = function(...args) {
+    const result = origPushState.apply(this, args);
+    handleUrlChange('pushState');
+    return result;
+  };
+
+  history.replaceState = function(...args) {
+    const result = origReplaceState.apply(this, args);
+    handleUrlChange('replaceState');
+    return result;
+  };
+
+  // Polling fallback - check every 500ms for URL changes that might have been missed
+  setInterval(() => {
+    const currentHash = window.location.hash;
+    if (currentHash !== lastHash) {
+      handleUrlChange('poll');
+    }
+  }, 500);
+
+  console.log('[Contract Enforcer] URL change detection active (hashchange + popstate + History API + polling)');
 }
 
 // Legacy wfExplore API (for backwards compatibility)

@@ -535,18 +535,13 @@ class ContractObserver {
       window.ContractUI.hideNextField();
     }
 
-    // Refresh store from new context
+    // Refresh store (for internal tracking)
     this.refreshStore();
 
-    // Re-validate all contracts to update UI
-    if (this.ideaStore.size > 0) {
-      this.validateAll();
-    } else {
-      // No contracts in direct view - check if we're inside a contract context
-      this.checkContractContext();
-    }
+    // Only show prompt if we're in a contract context (focused on contract or its descendant)
+    this.checkContractContext();
 
-    console.log('[Observer] Navigation refresh complete:', this.ideaStore.size, 'contracts in view');
+    console.log('[Observer] Navigation refresh complete');
   }
 
   /**

@@ -75,13 +75,23 @@ async function initializeContractEnforcer() {
     console.log("[Contract Enforcer] Injecting UI styles...");
     UI.injectStyles();
 
+    // Helper to check if we're focused on a specific contract
+    const isFocusedOnContract = (nodeId) => {
+      const focused = Parser.getFocusedItem();
+      return focused && focused.data.id === nodeId;
+    };
+
     // Initialize observer with callbacks
     console.log("[Contract Enforcer] Initializing observer...");
     Observer.init({
       onStateChange: (nodeId, idea, oldState, newState, validation) => {
         console.log(`[Contract Enforcer] State change: ${idea.title} ${oldState} -> ${newState}`);
-        UI.showStateChange(idea, oldState, newState);
-        UI.showNextField(idea, validation);
+
+        // Only show UI if focused on this contract
+        if (isFocusedOnContract(nodeId)) {
+          UI.showStateChange(idea, oldState, newState);
+          UI.showNextField(idea, validation);
+        }
 
         // Log event
         if (window.ContractStorage) {
@@ -97,7 +107,11 @@ async function initializeContractEnforcer() {
 
       onValidationError: (nodeId, idea, errors) => {
         console.warn(`[Contract Enforcer] Validation errors for ${idea.title}:`, errors);
-        UI.showValidationErrors(idea, errors);
+
+        // Only show UI if focused on this contract
+        if (isFocusedOnContract(nodeId)) {
+          UI.showValidationErrors(idea, errors);
+        }
 
         // Log event
         if (window.ContractStorage) {
@@ -112,11 +126,13 @@ async function initializeContractEnforcer() {
 
       onContractAdded: (nodeId, idea) => {
         console.log(`[Contract Enforcer] Contract added: ${idea.title}`);
-        UI.showInfo('Contract Created', `"${idea.title}" is now a managed idea`);
 
-        // Show next field prompt
-        const validation = Integrity.validate_idea(Observer.ideaStore, idea);
-        UI.showNextField(idea, validation);
+        // Only show UI if focused on this contract
+        if (isFocusedOnContract(nodeId)) {
+          UI.showInfo('Contract Created', `"${idea.title}" is now a managed idea`);
+          const validation = Integrity.validate_idea(Observer.ideaStore, idea);
+          UI.showNextField(idea, validation);
+        }
 
         // Log event
         if (window.ContractStorage) {
@@ -130,7 +146,11 @@ async function initializeContractEnforcer() {
 
       onContractRemoved: (nodeId, idea) => {
         console.log(`[Contract Enforcer] Contract removed: ${idea?.title || nodeId}`);
-        UI.hideNextField();
+
+        // Only hide if we were focused on this contract
+        if (isFocusedOnContract(nodeId)) {
+          UI.hideNextField();
+        }
 
         // Log event
         if (window.ContractStorage) {
@@ -143,8 +163,10 @@ async function initializeContractEnforcer() {
       },
 
       onFieldChange: (nodeId, idea, validation) => {
-        // Update next field prompt
-        UI.showNextField(idea, validation);
+        // Only show UI if focused on this contract
+        if (isFocusedOnContract(nodeId)) {
+          UI.showNextField(idea, validation);
+        }
       }
     });
 

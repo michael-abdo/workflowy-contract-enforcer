@@ -514,21 +514,22 @@ function getFocusedItem() {
 }
 
 /**
- * Check if currently inside a contract context (focused node is descendant of contract)
- * @returns {Object|null} The contract ancestor, or null if not in contract context
+ * Check if currently focused on a contract node
+ * Only returns the contract if we're directly focused on it (not descendants or ancestors)
+ * @returns {Object|null} The focused contract, or null if not focused on a contract
  */
 function getContractContext() {
   const focused = getFocusedItem();
   if (!focused) return null;
 
-  // Check if focused item itself is a contract
+  // Only show popup if focused item itself is a contract
   const name = focused.data.nm || '';
   if (hasTag(name, CONTRACT_TAG)) {
     return focused;
   }
 
-  // Check ancestors
-  return findContractAncestor(focused);
+  // Don't show popup for children or ancestors of contracts
+  return null;
 }
 
 /**

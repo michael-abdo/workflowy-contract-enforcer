@@ -1,0 +1,514 @@
+/**
+ * UI Module - Toast notifications and visual feedback
+ *
+ * Provides:
+ * - Toast notifications for errors and status
+ * - Next field prompts
+ * - State indicator display
+ * - Visual feedback for validation
+ */
+
+// Toast container ID
+const TOAST_CONTAINER_ID = 'contract-toast-container';
+const PROMPT_CONTAINER_ID = 'contract-prompt-container';
+
+// Toast types
+const TOAST_TYPES = {
+  ERROR: 'error',
+  WARNING: 'warning',
+  SUCCESS: 'success',
+  INFO: 'info'
+};
+
+// State colors
+const STATE_COLORS = {
+  raw: '#9ca3af',       // Gray
+  wanting: '#f59e0b',   // Amber
+  planning: '#3b82f6',  // Blue
+  implementing: '#8b5cf6', // Purple
+  done: '#10b981'       // Green
+};
+
+/**
+ * Inject CSS styles into the page
+ */
+function injectStyles() {
+  if (document.getElementById('contract-ui-styles')) {
+    return; // Already injected
+  }
+
+  const styles = document.createElement('style');
+  styles.id = 'contract-ui-styles';
+  styles.textContent = `
+    /* Toast Container */
+    #${TOAST_CONTAINER_ID} {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 999999;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      pointer-events: none;
+    }
+
+    /* Toast Base */
+    .contract-toast {
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 14px;
+      line-height: 1.4;
+      max-width: 350px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      pointer-events: auto;
+      animation: slideIn 0.3s ease-out;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .contract-toast.closing {
+      animation: slideOut 0.2s ease-in forwards;
+    }
+
+    @keyframes slideIn {
+      from {
+        transform: translateX(100%);
+        opacity: 0;
+      }
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+
+    @keyframes slideOut {
+      from {
+        transform: translateX(0);
+        opacity: 1;
+      }
+      to {
+        transform: translateX(100%);
+        opacity: 0;
+      }
+    }
+
+    /* Toast Types */
+    .contract-toast.error {
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      color: #991b1b;
+    }
+
+    .contract-toast.warning {
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      color: #92400e;
+    }
+
+    .contract-toast.success {
+      background: #ecfdf5;
+      border: 1px solid #a7f3d0;
+      color: #065f46;
+    }
+
+    .contract-toast.info {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      color: #1e40af;
+    }
+
+    /* Toast Icon */
+    .contract-toast-icon {
+      flex-shrink: 0;
+      width: 20px;
+      height: 20px;
+    }
+
+    /* Toast Content */
+    .contract-toast-content {
+      flex: 1;
+    }
+
+    .contract-toast-title {
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+
+    .contract-toast-message {
+      opacity: 0.9;
+    }
+
+    /* Toast Close Button */
+    .contract-toast-close {
+      flex-shrink: 0;
+      background: none;
+      border: none;
+      cursor: pointer;
+      opacity: 0.5;
+      padding: 2px;
+      transition: opacity 0.2s;
+    }
+
+    .contract-toast-close:hover {
+      opacity: 1;
+    }
+
+    /* Prompt Container */
+    #${PROMPT_CONTAINER_ID} {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 999998;
+      pointer-events: none;
+    }
+
+    /* Next Field Prompt - Minimal, just the question */
+    .contract-prompt {
+      background: rgba(0, 0, 0, 0.75);
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 13px;
+      pointer-events: auto;
+      max-width: 280px;
+      color: white;
+    }
+
+    .contract-prompt-question {
+      line-height: 1.4;
+    }
+
+    .contract-prompt-field {
+      opacity: 0.6;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+
+    /* State Badge (inline) */
+    .contract-state-badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      color: white;
+      margin-left: 4px;
+    }
+  `;
+
+  document.head.appendChild(styles);
+  console.log('[UI] Styles injected');
+}
+
+/**
+ * Create toast container if it doesn't exist
+ * @returns {HTMLElement} Toast container
+ */
+function getToastContainer() {
+  let container = document.getElementById(TOAST_CONTAINER_ID);
+
+  if (!container) {
+    container = document.createElement('div');
+    container.id = TOAST_CONTAINER_ID;
+    document.body.appendChild(container);
+  }
+
+  return container;
+}
+
+/**
+ * Create prompt container if it doesn't exist
+ * @returns {HTMLElement} Prompt container
+ */
+function getPromptContainer() {
+  let container = document.getElementById(PROMPT_CONTAINER_ID);
+
+  if (!container) {
+    container = document.createElement('div');
+    container.id = PROMPT_CONTAINER_ID;
+    document.body.appendChild(container);
+  }
+
+  return container;
+}
+
+/**
+ * Get icon SVG for toast type
+ * @param {string} type - Toast type
+ * @returns {string} SVG string
+ */
+function getToastIcon(type) {
+  const icons = {
+    error: `<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/></svg>`,
+    warning: `<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>`,
+    success: `<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>`,
+    info: `<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/></svg>`
+  };
+
+  return icons[type] || icons.info;
+}
+
+/**
+ * Create a toast notification element
+ * @param {string} type - Toast type (error, warning, success, info)
+ * @param {string} title - Toast title
+ * @param {string} message - Toast message
+ * @param {number} duration - Duration in ms (0 for no auto-dismiss)
+ * @returns {HTMLElement} Toast element
+ */
+function createToast(type, title, message, duration = 5000) {
+  const toast = document.createElement('div');
+  toast.className = `contract-toast ${type}`;
+
+  toast.innerHTML = `
+    <div class="contract-toast-icon">${getToastIcon(type)}</div>
+    <div class="contract-toast-content">
+      <div class="contract-toast-title">${escapeHtml(title)}</div>
+      <div class="contract-toast-message">${escapeHtml(message)}</div>
+    </div>
+    <button class="contract-toast-close" title="Close">
+      <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
+        <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/>
+      </svg>
+    </button>
+  `;
+
+  // Close button handler
+  const closeBtn = toast.querySelector('.contract-toast-close');
+  closeBtn.addEventListener('click', () => dismissToast(toast));
+
+  // Auto-dismiss
+  if (duration > 0) {
+    setTimeout(() => dismissToast(toast), duration);
+  }
+
+  return toast;
+}
+
+/**
+ * Dismiss a toast with animation
+ * @param {HTMLElement} toast - Toast element
+ */
+function dismissToast(toast) {
+  toast.classList.add('closing');
+  setTimeout(() => {
+    toast.remove();
+  }, 200);
+}
+
+/**
+ * Show a toast notification
+ * @param {string} type - Toast type
+ * @param {string} title - Toast title
+ * @param {string} message - Toast message
+ * @param {number} duration - Duration in ms
+ */
+function showToast(type, title, message, duration = 5000) {
+  injectStyles();
+  const container = getToastContainer();
+  const toast = createToast(type, title, message, duration);
+  container.appendChild(toast);
+}
+
+/**
+ * Show an error toast
+ * @param {string} title - Error title
+ * @param {string} message - Error message
+ */
+function showError(title, message) {
+  showToast(TOAST_TYPES.ERROR, title, message, 7000);
+}
+
+/**
+ * Show a warning toast
+ * @param {string} title - Warning title
+ * @param {string} message - Warning message
+ */
+function showWarning(title, message) {
+  showToast(TOAST_TYPES.WARNING, title, message, 5000);
+}
+
+/**
+ * Show a success toast
+ * @param {string} title - Success title
+ * @param {string} message - Success message
+ */
+function showSuccess(title, message) {
+  showToast(TOAST_TYPES.SUCCESS, title, message, 3000);
+}
+
+/**
+ * Show an info toast
+ * @param {string} title - Info title
+ * @param {string} message - Info message
+ */
+function showInfo(title, message) {
+  showToast(TOAST_TYPES.INFO, title, message, 4000);
+}
+
+/**
+ * Show the next field prompt
+ * @param {Object} idea - Idea object
+ * @param {Object} validation - Validation result
+ */
+function showNextField(idea, validation) {
+  injectStyles();
+
+  const container = getPromptContainer();
+
+  // Clear existing prompt
+  container.innerHTML = '';
+
+  if (!validation.next_field) {
+    return; // All fields resolved
+  }
+
+  const nextField = validation.next_field;
+  const prompt = window.ContractIntegrity?.get_field_prompt(nextField) || `Provide ${nextField}`;
+
+  const promptEl = document.createElement('div');
+  promptEl.className = 'contract-prompt';
+
+  // Just the question - pure signal
+  promptEl.innerHTML = `
+    <div class="contract-prompt-field">${formatFieldName(nextField)}</div>
+    <div class="contract-prompt-question">${escapeHtml(prompt)}</div>
+  `;
+
+  container.appendChild(promptEl);
+}
+
+/**
+ * Hide the next field prompt
+ */
+function hideNextField() {
+  const container = document.getElementById(PROMPT_CONTAINER_ID);
+  if (container) {
+    container.innerHTML = '';
+  }
+}
+
+/**
+ * Show validation errors for an idea
+ * @param {Object} idea - Idea object
+ * @param {Array<string>} errors - Validation errors
+ */
+function showValidationErrors(idea, errors) {
+  if (errors.length === 0) return;
+
+  const title = `Validation Error: ${idea.title}`;
+  const message = errors.join('\n');
+
+  showError(title, message);
+}
+
+/**
+ * Show state change notification
+ * @param {Object} idea - Idea object
+ * @param {string} oldState - Previous state
+ * @param {string} newState - New state
+ */
+function showStateChange(idea, oldState, newState) {
+  const title = idea.title;
+  const message = `State: ${oldState || 'none'} → ${newState}`;
+
+  if (newState === 'done') {
+    showSuccess(title, message);
+  } else {
+    showInfo(title, message);
+  }
+}
+
+/**
+ * Block #done tag attempt - show error
+ * @param {Object} idea - Idea object
+ * @param {string} missingField - The missing required field
+ */
+function blockDoneTag(idea, missingField) {
+  showError(
+    'Cannot Mark as Done',
+    `"${idea.title}" is missing: ${formatFieldName(missingField)}`
+  );
+}
+
+/**
+ * Format field name for display
+ * @param {string} field - Field name (e.g., 'qa_doc')
+ * @returns {string} Formatted name (e.g., 'QA Document')
+ */
+function formatFieldName(field) {
+  const names = {
+    intent: 'Intent',
+    stakeholders: 'Stakeholders',
+    owner: 'Owner',
+    system_ref: 'System Reference',
+    qa_doc: 'QA Document',
+    update_set: 'Update Set',
+    qa_results: 'QA Results'
+  };
+
+  return names[field] || field;
+}
+
+/**
+ * Escape HTML special characters
+ * @param {string} str - String to escape
+ * @returns {string} Escaped string
+ */
+function escapeHtml(str) {
+  if (!str) return '';
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+/**
+ * Create a state badge element
+ * @param {string} state - State name
+ * @returns {HTMLElement} Badge element
+ */
+function createStateBadge(state) {
+  const badge = document.createElement('span');
+  badge.className = 'contract-state-badge';
+  badge.style.background = STATE_COLORS[state] || '#6b7280';
+  badge.textContent = state.toUpperCase();
+  return badge;
+}
+
+// Export for use in other modules
+window.ContractUI = {
+  // Initialization
+  injectStyles,
+
+  // Toast notifications
+  showToast,
+  showError,
+  showWarning,
+  showSuccess,
+  showInfo,
+
+  // Prompts
+  showNextField,
+  hideNextField,
+
+  // Validation feedback
+  showValidationErrors,
+  showStateChange,
+  blockDoneTag,
+
+  // Utilities
+  formatFieldName,
+  escapeHtml,
+  createStateBadge,
+
+  // Constants
+  TOAST_TYPES,
+  STATE_COLORS
+};
+
+console.log('[Contract UI] Loaded');

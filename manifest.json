@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "Workflowy Contract Enforcer",
+  "version": "1.0.0",
+  "description": "Data integrity layer for Workflowy contracts - enforces structure on ideas",
+  "permissions": [
+    "activeTab",
+    "storage"
+  ],
+  "host_permissions": [
+    "*://workflowy.com/*",
+    "*://beta.workflowy.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["*://workflowy.com/*", "*://beta.workflowy.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "injected.js",
+        "src/storage.js",
+        "src/parser.js",
+        "src/integrity.js",
+        "src/observer.js",
+        "src/ui.js"
+      ],
+      "matches": ["*://workflowy.com/*", "*://beta.workflowy.com/*"]
+    }
+  ]
+}

@@ -149,9 +149,38 @@ function findChildByLabel(item, label) {
 }
 
 /**
+ * Get the text content of a child item, resolving mirrors if needed
+ * Mirror items have empty nm field - text comes from the original
+ * @param {Object} child - Child data object from ch array
+ * @returns {string} The text content
+ */
+function getChildText(child) {
+  if (!child) return '';
+
+  // Check if this is a mirror (has originalId in metadata)
+  if (child.metadata?.mirror?.originalId) {
+    const originalId = child.metadata.mirror.originalId;
+    try {
+      const originalItem = WF.getItemById(originalId);
+      if (originalItem) {
+        // Get text from original item
+        const originalName = originalItem.getName ? originalItem.getName() : (originalItem.data?.nm || '');
+        return stripHtml(originalName);
+      }
+    } catch (e) {
+      console.warn('[Parser] Error resolving mirror original:', originalId, e);
+    }
+  }
+
+  // Regular item - use nm directly
+  return stripHtml(child.nm || '');
+}
+
+/**
  * Extract content from a field node's children
  * For single-value fields: returns string
  * For list fields: returns array of strings
+ * Handles both regular items and mirror items
  * @param {Object} fieldItem - The field node (e.g., "Intent" node)
  * @param {boolean} asList - Whether to return as list
  * @returns {string|Array<string>|null}
@@ -175,10 +204,11 @@ function extractFieldContent(fieldItem, asList = false) {
   }
 
   if (asList) {
-    return children.map(child => stripHtml(child.nm || '')).filter(Boolean);
+    // Use getChildText to resolve mirrors
+    return children.map(child => getChildText(child)).filter(Boolean);
   } else {
-    // Single value - take first child's content
-    return stripHtml(children[0].nm || '') || null;
+    // Single value - take first child's content (resolve if mirror)
+    return getChildText(children[0]) || null;
   }
 }
 

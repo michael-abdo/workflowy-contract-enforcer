@@ -153,14 +153,154 @@ const projectEl = element.closest('[projectid]');
 const itemId = projectEl.getAttribute('projectid');
 ```
 
+## WF Global Object Methods
+
+```javascript
+// Core item access
+WF.rootItem()           // Get root item
+WF.getItemById(id)      // Get item by UUID
+WF.focusedItem()        // Get currently focused item
+WF.currentItem()        // Get current item
+
+// Item manipulation
+WF.createItem(parent, priority)     // Create new item
+WF.deleteItem(item)                 // Delete item
+WF.duplicateItem(item)              // Duplicate item
+WF.completeItem(item)               // Mark complete
+WF.setItemName(item, name)          // Set item name
+WF.setItemNote(item, note)          // Set item note
+WF.moveItems(items, parent, priority) // Move items
+WF.expandItem(item)                 // Expand item
+WF.collapseItem(item)               // Collapse item
+
+// Navigation
+WF.zoomTo(item)         // Zoom to item
+WF.zoomIn()             // Zoom in
+WF.zoomOut()            // Zoom out
+
+// Utilities
+WF.undo()               // Undo last action
+WF.redo()               // Redo action
+WF.save()               // Force save
+WF.editGroup(fn)        // Batch edits together
+```
+
+## Item Wrapper Methods (item from WF.getItemById)
+
+```javascript
+// These are on the item wrapper object returned by WF.getItemById()
+item.getId()
+item.getName()
+item.getNameInPlainText()
+item.getNote()
+item.getNoteInPlainText()
+item.isExpanded()
+item.isCompleted()
+item.isShared()
+item.getParent()
+item.getAncestors()
+item.getChildren()
+item.getVisibleChildren()
+item.getNextVisibleSibling()
+item.getPreviousVisibleSibling()
+item.getPriority()
+item.isMainDocumentRoot()
+item.getUrl()
+item.equals(otherItem)
+item.getSharedUrl()
+item.getLastModifiedByUserId()
+item.getLastModifiedDate()
+item.getCompletedDate()
+item.getNumDescendants()
+item.getElement()
+item.isReadOnly()
+item.isEmbedded()
+item.getSharedInfo()
+item.isAddedSubtreePlaceholder()
+item.getTagManager()
+item.containsAddedSubtreePlaceholder()
+item.hasSharedAncestor()
+item.isWithinCompleted()
+```
+
+## Item Data Prototype Methods (item.data)
+
+The `item.data` object has a rich prototype with 128+ methods. Key ones:
+
+```javascript
+// Mirror operations
+item.data.mirrorUnder([sourceItems], priority)  // Create mirrors under this item
+item.data.mirrorProjectTree()                    // Get mirror project tree
+item.data.isMirror()                             // Check if this is a mirror
+
+// Duplication
+item.data.duplicateUnder([items], priority)     // Duplicate items under this
+item.data.duplicateProjectTree()                 // Get duplicate project tree
+
+// Tree operations
+item.data.createUnder(projectTrees, priority)   // Create items under this
+item.data.moveUnder(items, priority)            // Move items under this
+item.data.pasteUnder(items, priority)           // Paste items under this
+
+// Navigation
+item.data.toDestination()                       // Convert to destination format
+item.data.toSource()                            // Convert to source format
+item.data.toViewable()                          // Convert to viewable format
+
+// Metadata
+item.data.setMetadata(metadata)                 // Set item metadata
+item.data.mergeMetadataWith(metadata)           // Merge metadata
+
+// Tree traversal
+item.data.parent()                              // Get parent
+item.data.children()                            // Get children
+item.data.getAncestors()                        // Get ancestors
+item.data.forEachItemInSubtree(fn)              // Iterate subtree
+item.data.countItemsInSubtree()                 // Count items in subtree
+
+// State
+item.data.isExpanded()
+item.data.isReadOnly()
+item.data.isDeletable()
+item.data.valid()
+item.data.focused()
+```
+
+## Project Reference Object (item.data.projectReferenceOrThrow)
+
+```javascript
+const ref = item.data.projectReferenceOrThrow;
+
+// Key methods (48 total)
+ref.getId()
+ref.getItem()
+ref.getName()
+ref.getNameInPlainText()
+ref.getNote()
+ref.getParent()
+ref.getAncestors()
+ref.getChildren()
+ref.getPotentiallyVisibleChildren()
+ref.getVisibleChildren()
+ref.getPriority()
+ref.isReadOnly()
+ref.isShared()
+ref.setMetadata(metadata)
+ref.setExpanded(bool)
+ref.applyLocalEdit(editData)
+ref.applyLocalBulkCreateChildren(priority, projectTrees)
+ref.navigateTo()
+```
+
 ## Key Findings for Contract Validation
 
 1. **Timestamps available** - Both `ct` (created) and `lm` (lastModified) accessible
 2. **Mirrors detectable** - `metadata.mirror.mirrorRootIds` links mirror to original
-3. **Children traversable** - `item.data.ch` array contains child item objects
-4. **No rate limits** - Chrome extension has full DOM/API access
-5. **Real-time access** - No polling needed, direct WF global access
-6. **Tag detection** - Parse `nm` and `no` for #hashtags
+3. **Mirrors distinguishable** - Mirror items have `isMirrorRoot: true` in metadata, empty `nm` field
+4. **Children traversable** - `item.data.ch` array contains child item objects
+5. **No rate limits** - Chrome extension has full DOM/API access
+6. **Real-time access** - No polling needed, direct WF global access
+7. **Tag detection** - Parse `nm` and `no` for #hashtags
 
 ## Advantages Over Official API
 

@@ -67,26 +67,33 @@ function createOrUpdateField(idea, field, value) {
   let fieldItem = findFieldNode(idea, field);
 
   if (fieldItem) {
-    // Update existing field - set the note content
+    // Update existing field - add as child bullet
     try {
-      if (typeof WF !== 'undefined' && WF.setItemNote) {
-        WF.setItemNote(fieldItem, value);
-        console.log('[Suggestions] Updated field note:', field);
-        return true;
+      if (typeof WF !== 'undefined' && WF.createItem) {
+        const childItem = WF.createItem(fieldItem, 0); // Insert as first child
+        if (childItem) {
+          WF.setItemName(childItem, value);
+          console.log('[Suggestions] Added child to existing field:', field);
+          return true;
+        }
       }
     } catch (e) {
       console.error('[Suggestions] Error updating field:', e);
     }
   } else {
-    // Create new field under contract
+    // Create new field under contract with suggestion as child
     try {
       if (typeof WF !== 'undefined' && WF.createItem) {
-        // Create the field with label as name, suggestion as note
+        // Create the field with label as name
         const newItem = WF.createItem(contractItem, 0); // Insert at beginning
         if (newItem) {
           WF.setItemName(newItem, fieldLabel);
-          WF.setItemNote(newItem, value);
-          console.log('[Suggestions] Created new field:', field);
+          // Create child with suggestion text
+          const childItem = WF.createItem(newItem, 0);
+          if (childItem) {
+            WF.setItemName(childItem, value);
+          }
+          console.log('[Suggestions] Created new field with child:', field);
           return true;
         }
       }

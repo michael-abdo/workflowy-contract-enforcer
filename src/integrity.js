@@ -533,8 +533,8 @@ function get_field_suggestion(field, idea = null) {
               console.log(`[Integrity] Found ${field} values from project (label: ${label}):`, projectValues);
               // Format based on field type
               if (field === 'stakeholders' || field === 'qa_doc' || field === 'update_set') {
-                // Multi-line format with bullet prefix
-                return projectValues.map(v => `- ${v}`).join('\n');
+                // Multi-line format (no bullet prefix - inserted as separate nodes)
+                return projectValues.join('\n');
               } else if (field === 'system_ref') {
                 // Join paths with newlines
                 return projectValues.join('\n');
@@ -555,11 +555,11 @@ function get_field_suggestion(field, idea = null) {
   // Fallback to generic templates
   const suggestions = {
     intent: `When complete, ${ideaTitle} will [describe the outcome]`,
-    stakeholders: `- [Name]: can accept/reject\n- [Name]: must be informed`,
+    stakeholders: `[Name]: can accept/reject\n[Name]: must be informed`,
     owner: `[Person/Team responsible]`,
     system_ref: `[Domain]: [identifier] / [path]`,
-    qa_doc: `- [ ] [Verification step 1]\n- [ ] [Verification step 2]`,
-    update_set: `- [ ] [Action 1]\n- [ ] [Action 2]\n- [ ] [Action 3]`,
+    qa_doc: `[Verification step 1]\n[Verification step 2]`,
+    update_set: `[Action 1]\n[Action 2]\n[Action 3]`,
     qa_results: `Pass/Fail: [result]\nEvidence: [link to artifacts]`
   };
 

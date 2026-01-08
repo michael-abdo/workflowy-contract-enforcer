@@ -23,7 +23,8 @@ function waitForModules(timeout = 5000) {
           window.ContractIntegrity &&
           window.ContractObserver &&
           typeof window.ContractObserver.init === 'function' &&
-          window.ContractUI) {
+          window.ContractUI &&
+          window.ContractSuggestions) {
         resolve();
       } else if (Date.now() - startTime > timeout) {
         reject(new Error('Timeout waiting for modules'));
@@ -124,6 +125,25 @@ async function initializeContractEnforcer() {
         }
       },
 
+      onValidationWarning: (nodeId, idea, warnings) => {
+        console.warn(`[Contract Enforcer] Validation warnings for ${idea.title}:`, warnings);
+
+        // Only show UI if focused on this contract
+        if (isFocusedOnContract(nodeId)) {
+          UI.showValidationWarnings(idea, warnings);
+        }
+
+        // Log event
+        if (window.ContractStorage) {
+          window.ContractStorage.logEvent({
+            type: 'validation_warning',
+            idea_id: nodeId,
+            idea_title: idea.title,
+            warnings: warnings
+          });
+        }
+      },
+
       onContractAdded: (nodeId, idea) => {
         console.log(`[Contract Enforcer] Contract added: ${idea.title}`);
 
@@ -132,6 +152,12 @@ async function initializeContractEnforcer() {
           UI.showInfo('Contract Created', `"${idea.title}" is now a managed idea`);
           const validation = Integrity.validate_idea(Observer.ideaStore, idea);
           UI.showNextField(idea, validation);
+
+          // Show suggestion for the first field
+          if (validation.next_field) {
+            const suggestionText = Integrity.get_field_suggestion(validation.next_field, idea);
+            UI.showSuggestion(idea, validation.next_field, suggestionText);
+          }
         }
 
         // Log event
@@ -166,11 +192,24 @@ async function initializeContractEnforcer() {
         // Only show UI if focused on this contract
         if (isFocusedOnContract(nodeId)) {
           UI.showNextField(idea, validation);
+
+          // Show suggestion for the next field if there is one
+          if (validation.next_field) {
+            const suggestionText = Integrity.get_field_suggestion(validation.next_field, idea);
+            UI.showSuggestion(idea, validation.next_field, suggestionText);
+          } else {
+            UI.hideSuggestion();
+          }
         }
       }
     });
 
     console.log("[Contract Enforcer] Observer initialized");
+
+    // Initialize keyboard listener for suggestions
+    const Suggestions = window.ContractSuggestions;
+    Suggestions.initKeyboardListener();
+    console.log("[Contract Enforcer] Suggestions keyboard listener initialized");
 
     // Show initial status
     const contractCount = Observer.getContracts().length;

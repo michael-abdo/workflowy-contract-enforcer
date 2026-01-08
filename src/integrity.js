@@ -235,6 +235,80 @@ function check_system_ref_narrowing(ancestorRef, childRef) {
 }
 
 /**
+ * Check if an idea is stale (no state change for specified duration)
+ * @param {Object} idea - Idea object with state_changed_at
+ * @param {number} staleDays - Number of days to consider stale (default 7)
+ * @returns {Object} { stale: boolean, daysSinceChange: number|null }
+ */
+function is_stale(idea, staleDays = 7) {
+  if (!idea.state_changed_at) {
+    return { stale: false, daysSinceChange: null };
+  }
+
+  const now = Date.now();
+  const daysSinceChange = (now - idea.state_changed_at) / (1000 * 60 * 60 * 24);
+
+  return {
+    stale: daysSinceChange >= staleDays,
+    daysSinceChange: Math.floor(daysSinceChange)
+  };
+}
+
+/**
+ * Validate that a contract lives inside a #project
+ * @param {Object} idea - Idea object
+ * @returns {Object} { valid: boolean, warning: string|null }
+ */
+function validate_project_container(idea) {
+  if (!window.ContractParser) {
+    return { valid: true, warning: null };
+  }
+
+  const item = idea._item;
+  if (!item) {
+    return { valid: true, warning: null };
+  }
+
+  const hasProject = window.ContractParser.hasProjectAncestor(item);
+
+  if (!hasProject) {
+    return {
+      valid: false,
+      warning: 'Contract should live inside a #project node'
+    };
+  }
+
+  return { valid: true, warning: null };
+}
+
+/**
+ * Validate that a contract is not nested inside another contract
+ * @param {Object} idea - Idea object
+ * @returns {Object} { valid: boolean, error: string|null }
+ */
+function validate_no_nesting(idea) {
+  if (!window.ContractParser) {
+    return { valid: true, error: null };
+  }
+
+  const item = idea._item;
+  if (!item) {
+    return { valid: true, error: null };
+  }
+
+  const hasContractParent = window.ContractParser.hasContractAncestor(item);
+
+  if (hasContractParent) {
+    return {
+      valid: false,
+      error: 'Contracts cannot be nested inside other contracts'
+    };
+  }
+
+  return { valid: true, error: null };
+}
+
+/**
  * Derive state from resolved fields map
  * @param {Object} resolved_map - Map of field to { resolved: boolean, ... }
  * @returns {string} State: 'raw', 'wanting', 'planning', 'implementing', or 'done'
@@ -284,13 +358,26 @@ function next_field(resolved_map) {
  * Full validation of an idea
  * @param {Map} store - Map of idea ID to Idea object
  * @param {Object} idea - Idea to validate
- * @returns {Object} { errors: string[], resolved_map: Object, state: string, next_field: string|null }
+ * @returns {Object} { errors: string[], warnings: string[], resolved_map: Object, state: string, next_field: string|null }
  */
 function validate_idea(store, idea) {
   const errors = [];
+  const warnings = [];
   const resolved_map = {};
 
-  // 1. Check mutual exclusion: cannot have both local and inherited
+  // 1. Structural validation: nested contract check (ERROR)
+  const nestingResult = validate_no_nesting(idea);
+  if (!nestingResult.valid) {
+    errors.push(nestingResult.error);
+  }
+
+  // 2. Structural validation: project container check (WARNING)
+  const projectResult = validate_project_container(idea);
+  if (!projectResult.valid) {
+    warnings.push(projectResult.warning);
+  }
+
+  // 3. Check mutual exclusion: cannot have both local and inherited
   for (const field of INHERITABLE) {
     if (has_local_value(idea, field) && has_inherit_ptr(idea, field)) {
       // Special case: system_ref can have both (narrowing)
@@ -300,14 +387,14 @@ function validate_idea(store, idea) {
     }
   }
 
-  // 2. Non-inheritable fields must not have inherit pointers
+  // 4. Non-inheritable fields must not have inherit pointers
   for (const field of NON_INHERITABLE) {
     if (has_inherit_ptr(idea, field)) {
       errors.push(`${field}: inheritance forbidden`);
     }
   }
 
-  // 3. Resolve all fields
+  // 5. Resolve all fields
   for (const field of FIELD_ORDER) {
     const result = resolve_field(store, idea, field);
     if (result.ok) {
@@ -324,7 +411,7 @@ function validate_idea(store, idea) {
     }
   }
 
-  // 4. System Reference narrowing check
+  // 6. System Reference narrowing check
   if (has_inherit_ptr(idea, 'system_ref') && has_local_value(idea, 'system_ref')) {
     const inheritResult = resolve_inherited(store, idea, 'system_ref');
     if (inheritResult.ok) {
@@ -337,14 +424,15 @@ function validate_idea(store, idea) {
     }
   }
 
-  // 5. Derive state
+  // 7. Derive state
   const state = derive_state(resolved_map);
 
-  // 6. Get next required field
+  // 8. Get next required field
   const nextField = next_field(resolved_map);
 
   return {
     errors,
+    warnings,
     resolved_map,
     state,
     next_field: nextField
@@ -409,6 +497,29 @@ function get_field_prompt(field) {
 }
 
 /**
+ * Get suggestion/template text for a specific field
+ * User can accept this suggestion with Cmd+` keyboard shortcut
+ * @param {string} field - Field name
+ * @param {Object} idea - Optional idea object for context
+ * @returns {string} Suggestion text template
+ */
+function get_field_suggestion(field, idea = null) {
+  const ideaTitle = idea?.title || '[this idea]';
+
+  const suggestions = {
+    intent: `When complete, ${ideaTitle} will [describe the outcome]`,
+    stakeholders: `- [Name]: can accept/reject\n- [Name]: must be informed`,
+    owner: `[Person/Team responsible]`,
+    system_ref: `[Domain]: [identifier] / [path]`,
+    qa_doc: `- [ ] [Verification step 1]\n- [ ] [Verification step 2]`,
+    update_set: `- [ ] [Action 1]\n- [ ] [Action 2]\n- [ ] [Action 3]`,
+    qa_results: `Pass/Fail: [result]\nEvidence: [link to artifacts]`
+  };
+
+  return suggestions[field] || `[Provide ${field}]`;
+}
+
+/**
  * Validate a write operation before allowing it
  * @param {Map} store - Current idea store
  * @param {Object} newIdea - The idea after proposed changes
@@ -422,7 +533,8 @@ function validate_write(store, newIdea) {
   const structuralErrors = validation.errors.filter(e =>
     e.includes('cannot be both') ||
     e.includes('inheritance forbidden') ||
-    e.includes('broadens beyond')
+    e.includes('broadens beyond') ||
+    e.includes('cannot be nested')
   );
 
   return {
@@ -462,8 +574,18 @@ window.ContractIntegrity = {
   is_executable,
   is_complete,
 
+  // Structural validation
+  validate_project_container,
+  validate_no_nesting,
+
+  // Stale detection
+  is_stale,
+
   // Prompts
-  get_field_prompt
+  get_field_prompt,
+
+  // Suggestions
+  get_field_suggestion
 };
 
 console.log('[Contract Integrity] Loaded');

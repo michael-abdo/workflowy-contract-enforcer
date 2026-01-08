@@ -26,7 +26,8 @@
         "src/parser.js",
         "src/integrity.js",
         "src/observer.js",
-        "src/ui.js"
+        "src/ui.js",
+        "src/suggestions.js"
       ],
       "matches": ["*://workflowy.com/*", "*://beta.workflowy.com/*"]
     }

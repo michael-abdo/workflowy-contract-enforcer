@@ -410,6 +410,10 @@ function buildIdea(item) {
     blocks: blocks,
     blocked_by: blocked_by,
 
+    // Timestamps (state_changed_at loaded from storage, lm from Workflowy)
+    last_modified: item.data.lm || null,
+    state_changed_at: null, // Will be set by observer when state changes
+
     // Reference to original item for mutations
     _item: item
   };
@@ -498,6 +502,43 @@ function findContractAncestor(item) {
 }
 
 /**
+ * Find the nearest ancestor that is a project (#project tag)
+ * @param {Object} item - Starting item
+ * @returns {Object|null} Project ancestor item or null
+ */
+function findProjectAncestor(item) {
+  let current = getParentItem(item);
+
+  while (current) {
+    const name = current.data.nm || '';
+    if (hasTag(name, PROJECT_TAG)) {
+      return current;
+    }
+    current = getParentItem(current);
+  }
+
+  return null;
+}
+
+/**
+ * Check if an item has a contract ancestor (for nested contract detection)
+ * @param {Object} item - Starting item (should be a contract)
+ * @returns {boolean} True if item has a #contract ancestor
+ */
+function hasContractAncestor(item) {
+  return findContractAncestor(item) !== null;
+}
+
+/**
+ * Check if an item has a project ancestor
+ * @param {Object} item - Starting item
+ * @returns {boolean} True if item has a #project ancestor
+ */
+function hasProjectAncestor(item) {
+  return findProjectAncestor(item) !== null;
+}
+
+/**
  * Get the current focused node from URL hash
  * @returns {Object|null} Focused item or null
  */
@@ -563,6 +604,29 @@ function buildIdeaStore() {
   return store;
 }
 
+/**
+ * Find a field child node by field name (maps to label)
+ * @param {Object} item - Workflowy contract item
+ * @param {string} field - Field name (e.g., 'intent', 'qa_doc')
+ * @returns {Object|null} Child item or null
+ */
+function findFieldChild(item, field) {
+  const fieldLabels = {
+    intent: 'Intent',
+    stakeholders: 'Stakeholders',
+    owner: 'Owner',
+    system_ref: 'System Reference',
+    qa_doc: 'QA Document',
+    update_set: 'Update Set',
+    qa_results: 'QA Results'
+  };
+
+  const label = fieldLabels[field];
+  if (!label) return null;
+
+  return findChildByLabel(item, label);
+}
+
 // Export for use in other modules
 window.ContractParser = {
   CONTRACT_TAG,
@@ -577,6 +641,7 @@ window.ContractParser = {
   getNodeTitle,
   extractTags,
   findChildByLabel,
+  findFieldChild,
   extractFieldContent,
   detectInheritancePointer,
   parseContractFields,
@@ -585,6 +650,9 @@ window.ContractParser = {
   getItemById,
   getParentItem,
   findContractAncestor,
+  findProjectAncestor,
+  hasContractAncestor,
+  hasProjectAncestor,
   getFocusedItem,
   getContractContext
 };

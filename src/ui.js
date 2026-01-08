@@ -11,6 +11,7 @@
 // Toast container ID
 const TOAST_CONTAINER_ID = 'contract-toast-container';
 const PROMPT_CONTAINER_ID = 'contract-prompt-container';
+const SUGGESTION_CONTAINER_ID = 'contract-suggestion-container';
 
 // Toast types
 const TOAST_TYPES = {
@@ -199,6 +200,66 @@ function injectStyles() {
       color: white;
       margin-left: 4px;
     }
+
+    /* Suggestion Container */
+    #${SUGGESTION_CONTAINER_ID} {
+      position: fixed;
+      bottom: 90px;
+      right: 20px;
+      z-index: 999997;
+      pointer-events: none;
+    }
+
+    /* Suggestion Overlay */
+    .contract-suggestion {
+      background: rgba(59, 130, 246, 0.95);
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 13px;
+      pointer-events: auto;
+      max-width: 320px;
+      color: white;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      animation: slideIn 0.2s ease-out;
+    }
+
+    .contract-suggestion-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .contract-suggestion-field {
+      opacity: 0.8;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .contract-suggestion-shortcut {
+      background: rgba(255, 255, 255, 0.2);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-family: monospace;
+    }
+
+    .contract-suggestion-text {
+      font-style: italic;
+      opacity: 0.95;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      background: rgba(0, 0, 0, 0.1);
+      padding: 8px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+
+    .contract-suggestion.closing {
+      animation: slideOut 0.2s ease-in forwards;
+    }
   `;
 
   document.head.appendChild(styles);
@@ -235,6 +296,85 @@ function getPromptContainer() {
   }
 
   return container;
+}
+
+/**
+ * Create suggestion container if it doesn't exist
+ * @returns {HTMLElement} Suggestion container
+ */
+function getSuggestionContainer() {
+  let container = document.getElementById(SUGGESTION_CONTAINER_ID);
+
+  if (!container) {
+    container = document.createElement('div');
+    container.id = SUGGESTION_CONTAINER_ID;
+    document.body.appendChild(container);
+  }
+
+  return container;
+}
+
+// Store current suggestion state
+let currentSuggestion = {
+  idea: null,
+  field: null,
+  text: null
+};
+
+/**
+ * Show a suggestion overlay for a field
+ * @param {Object} idea - Current idea object
+ * @param {string} field - Field name (e.g., 'intent')
+ * @param {string} suggestionText - The suggestion text to show
+ */
+function showSuggestion(idea, field, suggestionText) {
+  injectStyles();
+  const container = getSuggestionContainer();
+
+  // Store current state for acceptance
+  currentSuggestion = { idea, field, text: suggestionText };
+
+  // Clear existing suggestion
+  container.innerHTML = '';
+
+  const suggestionEl = document.createElement('div');
+  suggestionEl.className = 'contract-suggestion';
+
+  suggestionEl.innerHTML = `
+    <div class="contract-suggestion-header">
+      <div class="contract-suggestion-field">${formatFieldName(field)} Suggestion</div>
+      <div class="contract-suggestion-shortcut">⌘ + Enter</div>
+    </div>
+    <div class="contract-suggestion-text">${escapeHtml(suggestionText)}</div>
+  `;
+
+  container.appendChild(suggestionEl);
+  console.log('[UI] Showing suggestion for', field);
+}
+
+/**
+ * Hide the suggestion overlay
+ */
+function hideSuggestion() {
+  const container = document.getElementById(SUGGESTION_CONTAINER_ID);
+  if (container) {
+    const suggestion = container.querySelector('.contract-suggestion');
+    if (suggestion) {
+      suggestion.classList.add('closing');
+      setTimeout(() => {
+        container.innerHTML = '';
+      }, 200);
+    }
+  }
+  currentSuggestion = { idea: null, field: null, text: null };
+}
+
+/**
+ * Get the current suggestion state
+ * @returns {Object} Current suggestion { idea, field, text }
+ */
+function getCurrentSuggestion() {
+  return currentSuggestion;
 }
 
 /**
@@ -408,6 +548,20 @@ function showValidationErrors(idea, errors) {
 }
 
 /**
+ * Show validation warnings for an idea
+ * @param {Object} idea - Idea object
+ * @param {Array<string>} warnings - Validation warnings
+ */
+function showValidationWarnings(idea, warnings) {
+  if (warnings.length === 0) return;
+
+  const title = `Warning: ${idea.title}`;
+  const message = warnings.join('\n');
+
+  showWarning(title, message);
+}
+
+/**
  * Show state change notification
  * @param {Object} idea - Idea object
  * @param {string} oldState - Previous state
@@ -496,8 +650,14 @@ window.ContractUI = {
   showNextField,
   hideNextField,
 
+  // Suggestions
+  showSuggestion,
+  hideSuggestion,
+  getCurrentSuggestion,
+
   // Validation feedback
   showValidationErrors,
+  showValidationWarnings,
   showStateChange,
   blockDoneTag,
 

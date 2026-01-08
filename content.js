@@ -15,6 +15,7 @@ const SCRIPTS_TO_INJECT = [
   'src/parser.js',
   'src/integrity.js',
   'src/ui.js',
+  'src/suggestions.js', // Suggestions module (after UI, before observer)
   'src/observer.js',
   'injected.js'       // Main entry point - must be last
 ];

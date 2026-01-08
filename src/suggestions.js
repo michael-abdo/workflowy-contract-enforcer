@@ -88,13 +88,12 @@ function createMirrorNode(parentItem, priority, sourceId) {
       }
     }
 
-    // Fallback: Copy the source item's text content
-    // Note: ((id)) syntax doesn't work in Workflowy - use actual text
+    // Fallback: Create mirror using ((text)) syntax
     const childItem = WF.createItem(parentItem, priority);
     if (childItem) {
       const sourceName = sourceItem.getName ? sourceItem.getName() : '';
-      WF.setItemName(childItem, sourceName);
-      console.log('[Suggestions] Created node with source text:', sourceName);
+      WF.setItemName(childItem, `((${sourceName}))`);
+      console.log('[Suggestions] Created mirror with text:', sourceName);
       return childItem;
     }
   } catch (e) {

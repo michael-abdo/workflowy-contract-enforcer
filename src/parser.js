@@ -665,12 +665,12 @@ function getProjectFieldValues(projectItem, fieldLabel) {
  *       - Credential B
  *     - Documents
  *       - Doc A
- * Returns: ["Credential A", "Credential B", "Doc A"]
+ * Returns: [{text: "Credential A", id: "abc123"}, ...]
  *
  * @param {Object} projectItem - Workflowy project item (#project node)
  * @param {string} fieldLabel - Label to search for (e.g., 'System Reference')
  * @param {number} maxDepth - Maximum recursion depth (default 3)
- * @returns {string[]|null} Array of leaf node names, or null if field not found
+ * @returns {Object[]|null} Array of {text, id} objects, or null if field not found
  */
 function getProjectFieldValuesDeep(projectItem, fieldLabel, maxDepth = 3) {
   if (!projectItem) return null;
@@ -688,11 +688,12 @@ function getProjectFieldValuesDeep(projectItem, fieldLabel, maxDepth = 3) {
     const children = item.getChildren ? item.getChildren() : [];
 
     if (children.length === 0) {
-      // Leaf node - collect its name
+      // Leaf node - collect its name and ID
       const name = item.getName ? item.getName() : (item.data?.nm || '');
       const cleanName = stripHtml(name).trim();
-      if (cleanName !== '') {
-        values.push(cleanName);
+      const id = item.getId ? item.getId() : (item.data?.id || null);
+      if (cleanName !== '' && id) {
+        values.push({ text: cleanName, id: id });
       }
     } else {
       // Has children - recurse into each

@@ -492,16 +492,26 @@ function updateSelectionUI() {
  * Supports click-to-select and multi-select with checkboxes
  * @param {Object} idea - Current idea object
  * @param {string} field - Field name (e.g., 'intent')
- * @param {string} suggestionText - The suggestion text to show
+ * @param {Object|string} suggestion - Suggestion object {text, items} or legacy string
  */
-function showSuggestion(idea, field, suggestionText) {
+function showSuggestion(idea, field, suggestion) {
   injectStyles();
   const container = getSuggestionContainer();
 
-  // Parse into individual items
-  const items = parseSuggestionItems(suggestionText);
+  // Handle both new object format and legacy string format
+  let suggestionText, items;
+  if (typeof suggestion === 'object' && suggestion !== null) {
+    suggestionText = suggestion.text;
+    // Items from project have {text, id}, fallback templates have null
+    items = suggestion.items || parseSuggestionItems(suggestion.text).map(text => ({ text, id: null }));
+  } else {
+    // Legacy string format
+    suggestionText = suggestion;
+    items = parseSuggestionItems(suggestion).map(text => ({ text, id: null }));
+  }
 
   // Store current state for acceptance (reset selection)
+  // items is now [{text, id}, ...] where id may be null for templates
   currentSuggestion = { idea, field, text: suggestionText, items, selectedIndices: new Set() };
 
   // Hide the separate prompt since we're combining them
@@ -520,11 +530,12 @@ function showSuggestion(idea, field, suggestionText) {
   let itemsHtml = '';
   items.forEach((item, index) => {
     const num = index + 1;
+    const displayText = typeof item === 'object' ? item.text : item;
     itemsHtml += `
       <div class="contract-suggestion-item" data-index="${index}">
         <input type="checkbox" class="contract-suggestion-checkbox" />
         <span class="contract-suggestion-key">Ctrl+${num}</span>
-        <span class="contract-suggestion-value">${escapeHtml(item)}</span>
+        <span class="contract-suggestion-value">${escapeHtml(displayText)}</span>
       </div>
     `;
   });

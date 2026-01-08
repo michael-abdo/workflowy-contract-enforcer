@@ -657,8 +657,8 @@ class ContractObserver {
 
           // Show suggestion for the next field if there is one
           if (validation.next_field) {
-            const suggestionText = window.ContractIntegrity.get_field_suggestion(validation.next_field, idea);
-            window.ContractUI.showSuggestion(idea, validation.next_field, suggestionText);
+            const suggestion = window.ContractIntegrity.get_field_suggestion(validation.next_field, idea);
+            window.ContractUI.showSuggestion(idea, validation.next_field, suggestion);
           }
         }
       }

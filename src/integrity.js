@@ -497,12 +497,12 @@ function get_field_prompt(field) {
 }
 
 /**
- * Get suggestion/template text for a specific field
+ * Get suggestion/template for a specific field
  * First checks parent #project for existing values, falls back to generic templates
- * User can accept this suggestion with Cmd+Enter keyboard shortcut
+ * Returns object with display text and items array (with IDs for mirror creation)
  * @param {string} field - Field name
  * @param {Object} idea - Optional idea object for context
- * @returns {string} Suggestion text template
+ * @returns {Object} { text: string, items: [{text, id}] | null }
  */
 function get_field_suggestion(field, idea = null) {
   const ideaTitle = idea?.title || '[this idea]';
@@ -531,13 +531,19 @@ function get_field_suggestion(field, idea = null) {
             const projectValues = window.ContractParser.getProjectFieldValuesDeep(projectItem, label);
             if (projectValues && projectValues.length > 0) {
               console.log(`[Integrity] Found ${field} values from project (label: ${label}):`, projectValues);
-              // Format based on field type - most fields support multiple items
+              // projectValues is now [{text, id}, ...]
               if (field === 'owner') {
                 // Owner is typically single value
-                return projectValues[0];
+                return {
+                  text: projectValues[0].text,
+                  items: [projectValues[0]]
+                };
               } else {
-                // Multi-line format for all other fields (inserted as separate nodes)
-                return projectValues.join('\n');
+                // Multi-line format for all other fields
+                return {
+                  text: projectValues.map(v => v.text).join('\n'),
+                  items: projectValues
+                };
               }
             }
           }
@@ -549,7 +555,7 @@ function get_field_suggestion(field, idea = null) {
     }
   }
 
-  // Fallback to generic templates
+  // Fallback to generic templates (no IDs - will be inserted as text, not mirrors)
   const suggestions = {
     intent: `When complete, ${ideaTitle} will [describe the outcome]`,
     stakeholders: `[Name]: can accept/reject\n[Name]: must be informed`,
@@ -560,7 +566,8 @@ function get_field_suggestion(field, idea = null) {
     qa_results: `Pass/Fail: [result]\nEvidence: [link to artifacts]`
   };
 
-  return suggestions[field] || `[Provide ${field}]`;
+  const fallbackText = suggestions[field] || `[Provide ${field}]`;
+  return { text: fallbackText, items: null };
 }
 
 /**

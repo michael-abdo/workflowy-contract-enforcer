@@ -64,10 +64,50 @@ function getCursorInsertPriority(contractItem) {
 }
 
 /**
+ * Create a mirror of a source item under a parent
+ * @param {Object} parentItem - Parent item to create mirror under
+ * @param {number} priority - Position priority
+ * @param {string} sourceId - ID of the source item to mirror
+ * @returns {Object|null} Created mirror item or null
+ */
+function createMirrorNode(parentItem, priority, sourceId) {
+  try {
+    const sourceItem = WF.getItemById(sourceId);
+    if (!sourceItem) {
+      console.warn('[Suggestions] Source item not found for mirror:', sourceId);
+      return null;
+    }
+
+    // Use WF.duplicateItem with mirror flag if available
+    if (typeof WF.duplicateItem === 'function') {
+      // Try to create a mirror using duplicate
+      const mirror = WF.duplicateItem(sourceItem, parentItem, priority, { asMirror: true });
+      if (mirror) {
+        console.log('[Suggestions] Created mirror via duplicateItem');
+        return mirror;
+      }
+    }
+
+    // Fallback: Create item and set up mirror relationship manually
+    // Workflowy mirrors use ((id)) format in name for display
+    const childItem = WF.createItem(parentItem, priority);
+    if (childItem) {
+      // Set the mirror reference - Workflowy recognizes ((id)) syntax
+      WF.setItemName(childItem, `((${sourceId}))`);
+      console.log('[Suggestions] Created mirror via ((id)) syntax');
+      return childItem;
+    }
+  } catch (e) {
+    console.error('[Suggestions] Error creating mirror:', e);
+  }
+  return null;
+}
+
+/**
  * Create a new field node under the contract if it doesn't exist
  * @param {Object} idea - The idea object
  * @param {string} field - The field name
- * @param {string} value - The value to set
+ * @param {string|Object[]} value - Text value or array of {text, id} items
  * @returns {boolean} True if successful
  */
 function createOrUpdateField(idea, field, value) {
@@ -95,22 +135,40 @@ function createOrUpdateField(idea, field, value) {
   // Check if field already exists
   let fieldItem = findFieldNode(idea, field);
 
-  // Split multi-line values into separate lines for individual nodes
-  const lines = value.split('\n').filter(line => line.trim() !== '');
+  // Handle both string values and item arrays
+  let items;
+  if (typeof value === 'string') {
+    // Legacy string format - split into lines with no IDs
+    items = value.split('\n')
+      .filter(line => line.trim() !== '')
+      .map(text => ({ text: text.trim(), id: null }));
+  } else if (Array.isArray(value)) {
+    // Array of {text, id} objects
+    items = value;
+  } else {
+    console.warn('[Suggestions] Invalid value type:', typeof value);
+    return false;
+  }
 
   if (fieldItem) {
     // Update existing field - add children at cursor position
     try {
       if (typeof WF !== 'undefined' && WF.createItem) {
         const insertPriority = getCursorInsertPriority(fieldItem);
-        // Create a child node for each line
-        lines.forEach((line, index) => {
-          const childItem = WF.createItem(fieldItem, insertPriority + index);
-          if (childItem) {
-            WF.setItemName(childItem, line.trim());
+        // Create a child node for each item (as mirror if has ID, else text)
+        items.forEach((item, index) => {
+          if (item.id) {
+            // Create mirror
+            createMirrorNode(fieldItem, insertPriority + index, item.id);
+          } else {
+            // Create text node
+            const childItem = WF.createItem(fieldItem, insertPriority + index);
+            if (childItem) {
+              WF.setItemName(childItem, item.text);
+            }
           }
         });
-        console.log('[Suggestions] Added', lines.length, 'children to existing field');
+        console.log('[Suggestions] Added', items.length, 'children to existing field');
         return true;
       }
     } catch (e) {
@@ -128,14 +186,18 @@ function createOrUpdateField(idea, field, value) {
         if (isEmptyNode && isChildOfContract) {
           // Reuse the empty node as the field
           WF.setItemName(focused, fieldLabel);
-          // Create a child node for each line
-          lines.forEach((line, index) => {
-            const childItem = WF.createItem(focused, index);
-            if (childItem) {
-              WF.setItemName(childItem, line.trim());
+          // Create a child node for each item
+          items.forEach((item, index) => {
+            if (item.id) {
+              createMirrorNode(focused, index, item.id);
+            } else {
+              const childItem = WF.createItem(focused, index);
+              if (childItem) {
+                WF.setItemName(childItem, item.text);
+              }
             }
           });
-          console.log('[Suggestions] Converted empty node to field with', lines.length, 'children');
+          console.log('[Suggestions] Converted empty node to field with', items.length, 'children');
           return true;
         } else {
           // Create new field under contract with suggestion as children
@@ -145,14 +207,18 @@ function createOrUpdateField(idea, field, value) {
           const newItem = WF.createItem(contractItem, insertPriority);
           if (newItem) {
             WF.setItemName(newItem, fieldLabel);
-            // Create a child node for each line
-            lines.forEach((line, index) => {
-              const childItem = WF.createItem(newItem, index);
-              if (childItem) {
-                WF.setItemName(childItem, line.trim());
+            // Create a child node for each item
+            items.forEach((item, index) => {
+              if (item.id) {
+                createMirrorNode(newItem, index, item.id);
+              } else {
+                const childItem = WF.createItem(newItem, index);
+                if (childItem) {
+                  WF.setItemName(childItem, item.text);
+                }
               }
             });
-            console.log('[Suggestions] Created field with', lines.length, 'children at position:', insertPriority);
+            console.log('[Suggestions] Created field with', items.length, 'children at position:', insertPriority);
             return true;
           }
         }
@@ -184,12 +250,12 @@ function acceptSuggestion(itemIndex = null) {
   }
 
   const items = suggestion.items || [];
-  let textToInsert;
+  let itemsToInsert;
   let itemCount;
 
   if (itemIndex === null || items.length === 0) {
     // Insert all items
-    textToInsert = suggestion.text;
+    itemsToInsert = items.length > 0 ? items : suggestion.text;
     itemCount = items.length || 1;
     console.log('[Suggestions] Accepting ALL items for', suggestion.field);
   } else {
@@ -199,18 +265,19 @@ function acceptSuggestion(itemIndex = null) {
       console.warn('[Suggestions] Invalid item index:', itemIndex);
       return false;
     }
-    textToInsert = items[idx];
+    // Pass as array with single item to preserve {text, id} structure
+    itemsToInsert = [items[idx]];
     itemCount = 1;
     console.log('[Suggestions] Accepting item', itemIndex, 'for', suggestion.field);
   }
 
-  if (!textToInsert) {
-    console.warn('[Suggestions] No text to insert');
+  if (!itemsToInsert || (Array.isArray(itemsToInsert) && itemsToInsert.length === 0)) {
+    console.warn('[Suggestions] No items to insert');
     return false;
   }
 
-  // Create or update the field with the suggestion text
-  const success = createOrUpdateField(suggestion.idea, suggestion.field, textToInsert);
+  // Create or update the field with the items (will create mirrors if items have IDs)
+  const success = createOrUpdateField(suggestion.idea, suggestion.field, itemsToInsert);
 
   if (success) {
     // Hide the suggestion overlay
@@ -301,7 +368,7 @@ function acceptSelectedItems() {
 
   const items = suggestion.items || [];
 
-  // Collect selected items in order
+  // Collect selected items in order (as {text, id} objects)
   const selectedItems = selectedIndices
     .sort((a, b) => a - b)
     .map(idx => items[idx])
@@ -312,11 +379,10 @@ function acceptSelectedItems() {
     return false;
   }
 
-  const textToInsert = selectedItems.join('\n');
   console.log('[Suggestions] Accepting', selectedItems.length, 'selected items for', suggestion.field);
 
-  // Create or update the field with the selected items
-  const success = createOrUpdateField(suggestion.idea, suggestion.field, textToInsert);
+  // Create or update the field with the selected items (will create mirrors if items have IDs)
+  const success = createOrUpdateField(suggestion.idea, suggestion.field, selectedItems);
 
   if (success) {
     // Hide the suggestion overlay

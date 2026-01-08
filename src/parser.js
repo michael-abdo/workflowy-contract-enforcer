@@ -163,12 +163,32 @@ function getChildText(child) {
     try {
       const originalItem = WF.getItemById(originalId);
       if (originalItem) {
-        // Get text from original item
         const originalName = originalItem.getName ? originalItem.getName() : (originalItem.data?.nm || '');
         return stripHtml(originalName);
       }
     } catch (e) {
       console.warn('[Parser] Error resolving mirror original:', originalId, e);
+    }
+  }
+
+  // If nm is empty, fetch fresh item to get metadata (handles stale ch array)
+  if (child.id && (!child.nm || child.nm === '')) {
+    try {
+      const freshItem = WF.getItemById(child.id);
+      if (freshItem) {
+        const freshData = freshItem.data;
+        // Check if fresh data has mirror info
+        if (freshData?.metadata?.mirror?.originalId) {
+          const originalId = freshData.metadata.mirror.originalId;
+          const originalItem = WF.getItemById(originalId);
+          if (originalItem) {
+            const originalName = originalItem.getName ? originalItem.getName() : (originalItem.data?.nm || '');
+            return stripHtml(originalName);
+          }
+        }
+      }
+    } catch (e) {
+      // Ignore errors fetching fresh item
     }
   }
 
@@ -188,7 +208,16 @@ function getChildText(child) {
 function extractFieldContent(fieldItem, asList = false) {
   if (!fieldItem || !fieldItem.data) return null;
 
-  const children = fieldItem.data.ch || [];
+  // Try data.ch first, fall back to getChildren() if stale
+  let children = fieldItem.data.ch || [];
+
+  // If ch array is empty but getChildren returns items, use those instead
+  if (children.length === 0 && fieldItem.getChildren) {
+    const freshChildren = fieldItem.getChildren();
+    if (freshChildren && freshChildren.length > 0) {
+      children = freshChildren.map(c => c.data);
+    }
+  }
 
   if (children.length === 0) {
     // Check if the field has inline content after the label
@@ -214,9 +243,10 @@ function extractFieldContent(fieldItem, asList = false) {
 
 /**
  * Detect inheritance pointer in a field's content
- * Inheritance pointers use Workflowy mirror links: ((NodeName))
+ * Inheritance pointers are mirrors that point to OTHER #contract nodes
+ * Mirrors pointing to #project values are NOT inheritance - they're local values
  * @param {Object} fieldItem - The field node
- * @returns {string|null} The referenced node ID, or null if no inheritance
+ * @returns {string|null} The referenced contract ID, or null if no inheritance
  */
 function detectInheritancePointer(fieldItem) {
   if (!fieldItem || !fieldItem.data) return null;
@@ -224,23 +254,43 @@ function detectInheritancePointer(fieldItem) {
   const children = fieldItem.data.ch || [];
 
   for (const child of children) {
-    // Check if child is a mirror (has mirrorRootIds)
-    if (child.metadata?.mirror?.mirrorRootIds) {
-      const mirrorIds = Object.keys(child.metadata.mirror.mirrorRootIds);
-      if (mirrorIds.length > 0) {
-        return mirrorIds[0]; // Return the original node's ID
+    let originalId = null;
+
+    // Check if child has mirror metadata with originalId
+    if (child.metadata?.mirror?.originalId) {
+      originalId = child.metadata.mirror.originalId;
+    }
+
+    // Also try fetching the item to check for mirror properties
+    if (!originalId && child.id) {
+      try {
+        const childItem = WF.getItemById(child.id);
+        if (childItem && childItem.data.reactToOriginalMarkChanged) {
+          // This is a mirror - get the original ID
+          if (childItem.data.metadata?.mirror?.originalId) {
+            originalId = childItem.data.metadata.mirror.originalId;
+          }
+        }
+      } catch (e) {
+        // Ignore errors fetching item
       }
     }
 
-    // Also check for mirror functions which indicate this is a mirror node
-    const childItem = WF.getItemById(child.id);
-    if (childItem && childItem.data.reactToOriginalMarkChanged) {
-      // This is a mirror - get the original
-      if (childItem.data.metadata?.mirror?.mirrorRootIds) {
-        const mirrorIds = Object.keys(childItem.data.metadata.mirror.mirrorRootIds);
-        if (mirrorIds.length > 0) {
-          return mirrorIds[0];
+    // If we found a mirror, check if it points to a CONTRACT (not #project values)
+    if (originalId) {
+      try {
+        const originalItem = WF.getItemById(originalId);
+        if (originalItem) {
+          // Check if original or any ancestor is a #contract
+          // If so, this is an inheritance pointer
+          if (hasContractAncestor(originalItem) || hasTag(originalItem.data?.nm || '', CONTRACT_TAG)) {
+            return originalId;
+          }
+          // If original is under #project, it's NOT inheritance - it's a local value reference
+          // So we don't return anything
         }
+      } catch (e) {
+        // Ignore errors
       }
     }
   }

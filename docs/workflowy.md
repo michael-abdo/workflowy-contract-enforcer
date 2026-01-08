@@ -1,0 +1,371 @@
+Workflowy Integration: Core Questions & Answers
+
+- Q1: How do I go from freeform braindump (Workflowy) to structured execution (Contracts)?
+  - Answer: You do NOT replace Workflowy. You layer structure onto it.
+  - Core insight
+    - Workflowy excels at: idea capture, entropy reduction, zero friction
+    - Contracts excel at: truth, execution, verification, enforcement
+  - The bridge: Progressive structuring, not migration
+    - Stage 0 — Brain dump (Workflowy-native)
+      - Everything starts as bullets, notes, transcripts, half-thoughts, links
+      - No contract. No pressure. This is pre-Idea.
+    - Stage 1 — Intent extraction (light constraint)
+      - Add `#contract` tag to the node (now managed, state = Raw)
+      - Ask one question: "What must be true if this succeeds?"
+      - Write that single sentence as Intent child node (state → Wanting)
+      - Now it's a managed Idea in "Wanting" state — still messy, but has a spine
+      - This is the only required step to cross from Raw to Wanting
+    - Stage 2 — Contract scaffolding (machine-assisted)
+      - Once Intent exists, everything else becomes fillable
+      - Automation suggests: stakeholders, system references, QA templates
+      - Nothing auto-commits. Everything is a proposal.
+    - Stage 3 — Enforcement boundary
+      - The moment you want execution, delegation, or automation: you must write through the contract
+      - Notifications, assignments, deployments, experiments, decisions all require: resolved fields, validation, audit trail
+  - One-sentence strategy
+    - Workflowy is where ideas are born; the contract system is where ideas become real
+
+- Q2: But I lose so much context when I move to contracts. How do I preserve it?
+  - Answer: You do NOT lose context — Workflowy IS the context.
+  - Key realization
+    - Workflowy itself is the context dump
+    - Everything in a node that is NOT a contract field = Context
+    - Parent nodes, sibling nodes, child notes = additional Context
+    - No separate "Context Dump" field needed
+  - What Context is (lives naturally in Workflowy)
+    - Raw notes, bullets, transcripts, links, screenshots
+    - Emotional reasoning, half-formed thoughts, historical discussion
+    - Why something felt important at the time
+    - Parent/child/sibling relationships preserve full picture
+  - What Context is NOT
+    - Not Intent, not Update Set, not QA (those are contract fields)
+    - Not something automation depends on directly
+    - Not something stakeholders must read
+    - Not validated or required
+  - The key separation
+    - Contract fields = truth (minimal, explicit, falsifiable, enforceable)
+    - Everything else in Workflowy = Context (rich, messy, narrative, non-falsifiable)
+    - You NEVER merge these
+  - One-sentence rule
+    - Context explains decisions; contracts enforce outcomes
+  - Why this works
+    - Workflowy already behaves like a context dump: append-only, hierarchical, zero schema, human-first
+    - No migration needed — context stays where it is
+
+- Q3: Is Context essentially the same as System Reference?
+  - Answer: No. They touch, but play different roles.
+  - System Reference (contract field)
+    - Answers: Where does the change apply?
+    - Nature: boundary, scope, address
+    - Required for execution
+    - Must stay precise and minimal
+    - Examples: repo/path/symbol, contract doc + clause ID, dataset + version
+  - Context (everything else in Workflowy)
+    - Answers: Why does this exist and how did we get here?
+    - Nature: memory, narrative, entropy
+    - Never required for execution
+    - Can be huge, messy, emotional
+    - Examples: transcripts, brainstorm bullets, Slack threads, screenshots, parent/sibling nodes
+  - The clean rule
+    - System Reference points (contract field, validated)
+    - Context explains (Workflowy content, not validated)
+    - They overlap only in content, not in function
+  - Why they must remain distinct
+    - If you merge them: System Reference becomes vague (scope creep), Context becomes authoritative (unverifiable execution), Automation breaks
+    - If you keep them separate: Humans get full context, Machines get clean boundaries, You preserve both speed and correctness
+  - One-line test to tell them apart
+    - Ask: "If this changes, does correctness change?"
+    - Yes → System Reference (contract field)
+    - No → Context (leave in Workflowy, don't extract)
+  - Final framing
+    - Context = cognitive substrate (Workflowy nodes)
+    - System Reference = execution address (contract field)
+    - Contract = truth (6 fields)
+    - QA = proof (QA Doc + QA Results)
+
+- Q4: How should Contracts and Workflowy communicate?
+  - Answer: Workflowy IS the data store — no separate "Contracts" database
+  - Key realization
+    - Workflowy nodes = Ideas
+    - Workflowy hierarchy = parent/child idea relationships
+    - Workflowy node content = Context (everything NOT a contract field)
+    - Contract fields are extracted/parsed from node structure (tags, templates, etc.)
+  - No bridge needed
+    - Workflowy is the single source of truth
+    - No context_refs, context_snapshot, or context_digest fields required
+    - The integrity layer reads directly from Workflowy
+    - Context is always available — it's the node and its relatives
+  - How contract fields live in Workflowy
+    - Node with `#contract` tag = a managed Idea
+    - All children of that node are part of the contract structure
+    - Contracts cannot nest inside contracts (no `#contract` inside `#contract`)
+    - A parent node can have multiple `#contract` children
+    - Contract fields as child nodes with labels (exact match, case-sensitive):
+      - Intent
+      - Stakeholders
+      - Owner
+      - System Reference
+      - QA Document
+      - Update Set
+      - QA Results
+    - Everything else in the node (not a contract field) = Context
+    - Node name + `#contract` = the Idea title
+    - The integrity layer parses children into structured Idea objects
+  - Contract field formats in Workflowy
+    - All fields: label as node name, content as child nodes
+    - Intent: single child node with the intent statement
+    - Stakeholders: bullet children (one per stakeholder)
+    - Owner: single child node with person/team identifier
+    - System Reference: URL or local path as child node
+    - QA Document: URL or local path as child node
+    - Update Set: bullet children (one per delta)
+    - QA Results: bullet children (pass/fail + evidence links)
+  - How inheritance works in Workflowy
+    - Parent-child node relationships = inheritance chain
+    - Child idea inherits from parent idea (Intent, Stakeholders, Owner, System Reference, QA Document)
+    - Explicit inheritance pointer = Workflowy mirror link: ((ancestor node name))
+    - Example: under Intent child, add ((Parent Project Intent)) to inherit
+    - Non-parent ancestors: can reference for context only, cannot inherit from them
+  - How dependencies work in Workflowy
+    - Workflowy mirror nodes link related ideas
+    - A mirror node in "blocks" section = this idea blocks the mirrored idea
+    - A mirror node in "blocked_by" section = this idea is blocked by the mirrored idea
+  - What this simplifies
+    - No syncing between systems
+    - No snapshot management
+    - No duplication of data
+    - Context is never "lost" — it's always in Workflowy
+
+- Q5: When does a Workflowy node become a managed Idea?
+  - Answer: The moment you want enforcement or other people to act
+  - Hard trigger (any of these become true)
+    - You want to assign it to someone (including your future self with accountability)
+    - You want to notify stakeholders
+    - You want to track state beyond "thinking"
+    - You want to ship something (decision, doc, deploy, code, hire)
+    - You want an LLM to operate on it (generate QA, propose deltas, dedupe)
+  - If none apply: leave it as unmanaged Workflowy content
+  - Minimal crossover rule
+    - Add `#contract` tag to a Workflowy node to make it a managed Idea
+    - Write Intent as a child node — this is the only required field to instantiate
+    - Removing `#contract` tag un-manages the Idea (returns to freeform context)
+  - Thresholds by state
+    - Wanting: mostly freeform; integrity layer just tracks spine (Intent exists)
+    - Planning: integrity layer becomes primary; demands QA Document + Update Set
+    - Implementing / Done: integrity layer owns truth; surrounding Workflowy content is context
+  - One-sentence rule
+    - If it stays a thought, leave it unmanaged
+    - If it becomes an obligation, add Intent and let the integrity layer enforce
+
+- Q6: Can I enforce contracts within Workflowy itself?
+  - Answer: Yes, via Chrome extension with real-time contract field tracking
+  - What Workflowy gives you
+    - text + hierarchy, tags, mirroring, manual discipline
+  - What Workflowy does NOT give you
+    - schema validation, "required field must resolve", inheritance semantics, event log + triggers, write guards
+  - Chrome extension approach (recommended)
+    - Track keystrokes on contract fields (Intent, Stakeholders, System Reference, QA Document, Update Set, QA Results)
+    - Automatic state derivation on every contract field edit
+    - State tags (#raw, #wanting, #planning, #implementing, #done) updated automatically
+    - Non-contract content (Context) remains freeform — no validation
+  - Validation triggers
+    - Contract field edit → re-derive state, update tag automatically
+    - `#contract` tag added → register node with integrity layer
+    - `#contract` tag removed → un-manage the Idea
+    - `#done` tag added → block if QA Results missing, reject if invalid
+  - The rapid feedback loop
+    - User adds `#contract` tag → node becomes managed, state = Raw (no Intent yet)
+    - User writes Intent child node
+    - Extension detects contract field change
+    - Calls derive_state()
+    - State changes: Raw → Wanting
+    - Extension updates status tag (#wanting) automatically
+    - User sees immediate status change
+  - What "hard" enforcement you get
+    - Prevent "Done" unless QA Results exist
+    - Prevent "Update Set inherited"
+    - Require explicit inheritance pointers
+    - Compute state and next action deterministically
+    - Reject invalid writes → show error toast to user
+  - Caveat
+    - Mobile app or other browsers without extension can bypass
+    - For now: no contract updates on mobile (context edits only)
+    - Future: drift detection via Workflowy API if needed
+
+- Q7: How does this enable an AI executive assistant?
+  - Answer: The system can answer questions from deterministic state, not vibes
+  - What the assistant reads
+    - Workflowy data THROUGH integrity layer (keeps guardrails)
+    - Integrity layer provides: state, next_field, validation errors, dependencies, event history
+    - Context comes from Workflowy node structure (parent/child/sibling)
+  - How AI proposes changes
+    - Separate panel UI (not inline in Workflowy)
+    - Shows: current node vs suggested replacement/insertion
+    - User can edit the suggested text directly in panel
+    - User can prompt AI for revisions before approving
+    - Approve button at bottom commits the change
+    - All writes still go through integrity layer validation
+  - What "what needs to be done next?" becomes
+    - A pure query
+    - For one idea: next_field(idea) + smallest prompt needed to resolve it
+    - For many ideas: rank by blockage + impact + urgency
+  - Example answer format
+    - "Next: QA Document for Idea 128"
+    - "Next: Stakeholders for Idea 205"
+    - "Next: QA Results for Idea 077 (already has QA doc + update set)"
+    - No ambiguity
+  - Scaling from idea → project → portfolio
+    - Uses Dependencies (blocks[] and blocked_by[]) from the data model
+    - With dependencies you can compute:
+      - Critical path (longest chain)
+      - Current blockers (nodes with unresolved next_field that block others)
+      - Throughput (ideas closed per week)
+      - Aging (stalled ideas)
+      - Work in progress limits
+  - "Which projects are blocking?"
+    - Definition: A project blocks if it has at least one unresolved contract field and other nodes depend on it
+    - Query: all ideas where blocked_by_count > 0 grouped by blocking idea's next_field
+    - Output: "Project A blocked by Idea X missing Stakeholders"
+  - "Which will take the longest?"
+    - Minimal model (no guessing):
+      - Complexity proxy = unresolved fields + dependency depth + update_set size
+      - Execution readiness = state weighting (raw < wanting < planning < implementing)
+    - Optional metadata for real estimates: effort_estimate, risk_level, owner
+  - The tight loop
+    - ask → propose → validate → commit → notify
+  - Query set v1
+    - "next for selected node"
+    - "next across all active ideas"
+    - "top 10 blockers"
+    - "critical path"
+    - "stalled > N days"
+    - "ready to ship"
+
+- Q8: What is the full system architecture?
+  - Answer: Five layers, where Universal Ideas is CODE (not just AI instructions)
+  - Critical insight
+    - Universal Ideas must be implemented as actual code (the Data Integrity Layer)
+    - AI is a service layer ON TOP of the integrity layer
+    - Workflow/automations are a SEPARATE layer (impure) from enforcement (pure)
+    - The integrity layer enforces rules regardless of caller (AI, human, automation, API)
+  - The Stack (5 layers)
+    - Layer 5: UI/UX
+      - Human interacts with AI chatbot
+      - Natural language interface
+      - "What's next?", "What's blocking?", "Help me with this idea"
+    - Layer 4: AI Service Layer
+      - Interprets human intent
+      - Proposes changes (never commits directly)
+      - Answers queries by reading from integrity layer
+      - CANNOT bypass integrity layer
+      - All writes go through Layer 2
+    - Layer 3: Workflow Layer (impure, automations)
+      - Subscribes to idea changes (via event log if enabled)
+      - Runs rules: "when X becomes true, do Y"
+      - Executes side effects: Slack/email/Jira/GitHub/any external system
+      - All writes go through Layer 2 (cannot bypass enforcement)
+      - Separate from enforcement to keep enforcement pure
+    - Layer 2: Data Integrity Layer (pure, enforcement — Universal Ideas as CODE)
+      - validate(idea) → errors[]
+      - derive_state(idea) → raw/wanting/planning/implementing/done
+      - next_field(idea) → what's missing
+      - Write guards → reject invalid changes
+      - Event log → optional, local storage for audit trail
+      - This layer enforces regardless of who calls it
+    - Layer 1: Data Store (Workflowy)
+      - Workflowy nodes = Ideas + Context
+      - Single source of truth for all idea data
+      - Accessed ONLY through Layer 2
+      - Never written to directly by AI, automations, or humans (except via extension through Layer 2)
+    - Chrome Extension (bridges Layer 1 and Layer 2)
+      - Runs in browser, intercepts Workflowy edits
+      - Tracks keystrokes on contract fields in real-time
+      - Routes all writes through Layer 2 (integrity layer)
+      - Updates state tags automatically based on derive_state()
+      - Provides UI feedback (validation errors, next field prompts)
+  - Why this ordering matters
+    - AI cannot corrupt data — must go through Layer 2
+    - Automations cannot corrupt data — must go through Layer 2
+    - Humans (via extension) cannot corrupt data — must go through Layer 2
+    - All roads lead through the integrity layer
+  - What each layer is responsible for
+    - UI/UX: Human experience, natural language
+    - AI Service: Intent interpretation, proposals, queries
+    - Workflow: Side effects, notifications, external integrations
+    - Integrity Layer: Truth, enforcement, validation (pure functions)
+    - Data Store: Persistence, context preservation
+  - One-sentence rule
+    - The AI is a convenience layer; the integrity layer is the constitution
+
+- Q9: Implementation decisions (resolved)
+  - AI Service Layer connection
+    - Decision: Try Workflowy API first (https://beta.workflowy.com/api-reference/)
+    - TBD: backlink access, rate limits — will discover during implementation
+    - Fallback: karelklima/workflowy library if API insufficient
+  - Workflow Layer triggers
+    - Primary: field completion → state change → next step prompt
+    - Also available: time-based (stale), manual triggers, #done added
+    - Subscription mechanism: Start with Workflowy API (polling or real-time if available)
+  - Owner field (RESOLVED — added to contract)
+    - Stakeholders = who accepts/rejects
+    - Owner = who does the work (now in data model as 7th contract field)
+    - Inheritable: Yes (explicit reference only)
+  - Timestamps
+    - TBD: Check if Workflowy API exposes metadata (created_at, updated_at)
+    - Needed for: state_changed_at, stalled detection
+    - Required for "stalled > N days" queries
+  - Project structure
+    - Projects (`#project`) contain Ideas (`#contract`)
+    - Contracts MUST live inside a Project (no orphan contracts)
+    - Project template structure:
+      ```
+      PROJECT NAME #project
+        - System Reference
+          - [Credentials, paths, environments]
+        - Intent
+          - [Project-level intent/goals]
+        - Stakeholders
+          - [Project stakeholders - suggested to contracts]
+        - QA Documents
+          - [Project-level QA standards]
+        - Contracts
+          - Contract 1 #contract
+            - Intent
+            - Stakeholders (inherits suggestions from project)
+            - Owner
+            - System Reference (inherits suggestions from project)
+            - QA Document
+            - Update Set
+            - QA Results
+          - Contract 2 #contract
+            - ...
+      ```
+    - Suggestion inheritance:
+      - When creating a contract field, the system checks the parent #project for matching fields
+      - If project has values (e.g., Stakeholders), those are suggested as defaults
+      - User can accept project suggestions or provide custom values
+      - Fields that inherit suggestions: Stakeholders, System Reference, Intent, QA Document
+      - Fields that are always local: Owner, Update Set, QA Results
+  - Non-parent inheritance (RESOLVED)
+    - Rule: Can REFERENCE non-parent ancestors for context, but CANNOT INHERIT from them
+    - Inheritance chain is strictly parent → child
+    - Mirror links to non-parent ancestors provide context only, not field values
+
+- Summary: The Architecture (5 Layers)
+  - Layer 1: Workflowy = Data Store (source of truth, context preservation)
+  - Layer 2: Universal Ideas = Data Integrity Layer (pure CODE that enforces contracts)
+  - Layer 3: Workflow Layer = Automations (impure — side effects, notifications, integrations)
+  - Layer 4: AI Chatbot = Service Layer (interprets, proposes, queries — cannot bypass integrity)
+  - Layer 5: Chat Interface = UI/UX (human talks to AI)
+  - Chrome Extension = Real-time contract field tracking + automatic state derivation
+  - Key principle: All writes (AI, human, automation) go through Layer 2 (integrity layer)
+  - Workflowy conventions:
+    - `#contract` tag = managed Idea
+    - Node name + `#contract` = Idea title
+    - Child nodes = contract fields (label as node name, content as children)
+    - Contract fields (7 total): Intent, Stakeholders, Owner, System Reference, QA Document, Update Set, QA Results
+    - Field formats: Intent (single child), Stakeholders (bullet children), Owner (single child), System Reference (URL/path), QA Document (URL/path), Update Set (bullet children), QA Results (bullet children)
+    - Everything else = Context (freeform, not validated)
+    - State tags (#raw, #wanting, #planning, #implementing, #done) updated automatically
+    - Mirror links ((node name)) = inheritance pointers and dependencies
+    - Inheritance: strictly parent → child; non-parent ancestors can be referenced for context only

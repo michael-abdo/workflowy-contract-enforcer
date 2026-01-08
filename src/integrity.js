@@ -498,7 +498,8 @@ function get_field_prompt(field) {
 
 /**
  * Get suggestion/template text for a specific field
- * User can accept this suggestion with Cmd+` keyboard shortcut
+ * First checks parent #project for existing values, falls back to generic templates
+ * User can accept this suggestion with Cmd+Enter keyboard shortcut
  * @param {string} field - Field name
  * @param {Object} idea - Optional idea object for context
  * @returns {string} Suggestion text template
@@ -506,6 +507,49 @@ function get_field_prompt(field) {
 function get_field_suggestion(field, idea = null) {
   const ideaTitle = idea?.title || '[this idea]';
 
+  // Map field names to project labels
+  const fieldToLabel = {
+    intent: 'Intent',
+    stakeholders: 'Stakeholders',
+    owner: 'Owner',
+    system_ref: 'System Reference',
+    qa_doc: 'QA Documents',  // Note: project uses "QA Documents" (plural)
+    update_set: 'Update Set',
+    qa_results: 'QA Results'
+  };
+
+  // Try to get values from parent #project
+  if (idea?.id && window.ContractParser) {
+    try {
+      const contractItem = window.ContractParser.getItemById(idea.id);
+      if (contractItem) {
+        const projectItem = window.ContractParser.findProjectAncestor(contractItem);
+        if (projectItem) {
+          const label = fieldToLabel[field];
+          const projectValues = window.ContractParser.getProjectFieldValues(projectItem, label);
+
+          if (projectValues && projectValues.length > 0) {
+            console.log(`[Integrity] Found ${field} values from project:`, projectValues);
+            // Format based on field type
+            if (field === 'stakeholders' || field === 'qa_doc' || field === 'update_set') {
+              // Multi-line format
+              return projectValues.map(v => `- ${v}`).join('\n');
+            } else if (field === 'system_ref') {
+              // Join paths with newlines
+              return projectValues.join('\n');
+            } else {
+              // Single value or first value
+              return projectValues[0];
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[Integrity] Error getting project values:', e);
+    }
+  }
+
+  // Fallback to generic templates
   const suggestions = {
     intent: `When complete, ${ideaTitle} will [describe the outcome]`,
     stakeholders: `- [Name]: can accept/reject\n- [Name]: must be informed`,

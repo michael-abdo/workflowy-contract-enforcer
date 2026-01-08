@@ -627,6 +627,35 @@ function findFieldChild(item, field) {
   return findChildByLabel(item, label);
 }
 
+/**
+ * Get field values from a project node
+ * Looks for a child with the given label and returns its children's names
+ * @param {Object} projectItem - Workflowy project item (#project node)
+ * @param {string} fieldLabel - Label to search for (e.g., 'Stakeholders', 'System Reference')
+ * @returns {string[]|null} Array of child names, or null if field not found
+ */
+function getProjectFieldValues(projectItem, fieldLabel) {
+  if (!projectItem) return null;
+
+  // Find the field child under project
+  const fieldChild = findChildByLabel(projectItem, fieldLabel);
+  if (!fieldChild) return null;
+
+  // Get the children of the field
+  const children = fieldChild.getChildren ? fieldChild.getChildren() : [];
+  if (children.length === 0) return null;
+
+  // Extract the names of each child
+  const values = children
+    .map(child => {
+      const name = child.getName ? child.getName() : (child.data?.nm || '');
+      return stripHtml(name).trim();
+    })
+    .filter(name => name !== '');
+
+  return values.length > 0 ? values : null;
+}
+
 // Export for use in other modules
 window.ContractParser = {
   CONTRACT_TAG,
@@ -642,6 +671,7 @@ window.ContractParser = {
   extractTags,
   findChildByLabel,
   findFieldChild,
+  getProjectFieldValues,
   extractFieldContent,
   detectInheritancePointer,
   parseContractFields,

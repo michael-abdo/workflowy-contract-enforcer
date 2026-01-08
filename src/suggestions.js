@@ -37,23 +37,30 @@ function findFieldNode(idea, field) {
 /**
  * Get the insertion priority based on cursor position
  * @param {Object} contractItem - The contract item to insert under
- * @returns {number} Priority for insertion (after cursor, or 0 if no cursor)
+ * @returns {number} Priority for insertion (after cursor, or bottom if no cursor)
  */
 function getCursorInsertPriority(contractItem) {
   try {
     const focused = WF.focusedItem();
-    if (!focused) return 0;
-
-    // Check if cursor is within the contract (focused item's parent is the contract)
-    const parent = focused.getParent();
-    if (parent && parent.getId() === contractItem.getId()) {
-      // Insert after the cursor position
-      return focused.getPriority() + 1;
+    if (focused) {
+      // Check if cursor is within the contract (focused item's parent is the contract)
+      const parent = focused.getParent();
+      if (parent && parent.getId() === contractItem.getId()) {
+        // Insert after the cursor position
+        return focused.getPriority() + 1;
+      }
     }
   } catch (e) {
     console.warn('[Suggestions] Could not get cursor position:', e);
   }
-  return 0; // Default to top
+
+  // Default to bottom - get child count
+  try {
+    const children = contractItem.getChildren ? contractItem.getChildren() : [];
+    return children.length; // Insert at end
+  } catch (e) {
+    return 999; // Fallback to high number (bottom)
+  }
 }
 
 /**

@@ -267,6 +267,49 @@ function injectStyles() {
     .contract-suggestion.closing {
       animation: slideOut 0.2s ease-in forwards;
     }
+
+    /* Suggestion Items (numbered) */
+    .contract-suggestion-items {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .contract-suggestion-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      background: rgba(0, 0, 0, 0.15);
+      padding: 6px 10px;
+      border-radius: 4px;
+    }
+
+    .contract-suggestion-key {
+      background: rgba(255, 255, 255, 0.25);
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 10px;
+      font-family: monospace;
+      font-weight: 600;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .contract-suggestion-value {
+      font-size: 12px;
+      line-height: 1.4;
+      opacity: 0.95;
+    }
+
+    .contract-suggestion-all {
+      border-top: 1px solid rgba(255, 255, 255, 0.2);
+      margin-top: 4px;
+      padding-top: 10px;
+    }
+
+    .contract-suggestion-all .contract-suggestion-value {
+      font-weight: 600;
+    }
   `;
 
   document.head.appendChild(styles);
@@ -325,11 +368,26 @@ function getSuggestionContainer() {
 let currentSuggestion = {
   idea: null,
   field: null,
-  text: null
+  text: null,
+  items: []  // Array of individual items for numbered selection
 };
 
 /**
+ * Parse suggestion text into individual items
+ * @param {string} text - Suggestion text (may be newline-separated)
+ * @returns {string[]} Array of individual items
+ */
+function parseSuggestionItems(text) {
+  if (!text) return [];
+  // Split by newlines and clean up
+  return text.split('\n')
+    .map(line => line.trim())
+    .filter(line => line !== '');
+}
+
+/**
  * Show a combined prompt + suggestion overlay for a field
+ * Displays numbered items with Ctrl+1, Ctrl+2, etc. shortcuts
  * @param {Object} idea - Current idea object
  * @param {string} field - Field name (e.g., 'intent')
  * @param {string} suggestionText - The suggestion text to show
@@ -338,8 +396,11 @@ function showSuggestion(idea, field, suggestionText) {
   injectStyles();
   const container = getSuggestionContainer();
 
+  // Parse into individual items
+  const items = parseSuggestionItems(suggestionText);
+
   // Store current state for acceptance
-  currentSuggestion = { idea, field, text: suggestionText };
+  currentSuggestion = { idea, field, text: suggestionText, items };
 
   // Hide the separate prompt since we're combining them
   hideNextField();
@@ -353,17 +414,47 @@ function showSuggestion(idea, field, suggestionText) {
   const suggestionEl = document.createElement('div');
   suggestionEl.className = 'contract-suggestion';
 
+  // Build numbered items HTML
+  let itemsHtml = '';
+  if (items.length > 1) {
+    // Multiple items - show each with Ctrl+N shortcut
+    items.forEach((item, index) => {
+      const num = index + 1;
+      itemsHtml += `
+        <div class="contract-suggestion-item">
+          <span class="contract-suggestion-key">Ctrl+${num}</span>
+          <span class="contract-suggestion-value">${escapeHtml(item)}</span>
+        </div>
+      `;
+    });
+    // Add "Insert All" option
+    const allNum = items.length + 1;
+    itemsHtml += `
+      <div class="contract-suggestion-item contract-suggestion-all">
+        <span class="contract-suggestion-key">Ctrl+${allNum}</span>
+        <span class="contract-suggestion-value">Insert All</span>
+      </div>
+    `;
+  } else {
+    // Single item - just show Ctrl+1
+    itemsHtml = `
+      <div class="contract-suggestion-item">
+        <span class="contract-suggestion-key">Ctrl+1</span>
+        <span class="contract-suggestion-value">${escapeHtml(items[0] || suggestionText)}</span>
+      </div>
+    `;
+  }
+
   suggestionEl.innerHTML = `
     <div class="contract-suggestion-header">
       <div class="contract-suggestion-field">${formatFieldName(field)}</div>
-      <div class="contract-suggestion-shortcut">⌘ + Enter</div>
     </div>
     <div class="contract-suggestion-question">${escapeHtml(prompt)}</div>
-    <div class="contract-suggestion-text">${escapeHtml(suggestionText)}</div>
+    <div class="contract-suggestion-items">${itemsHtml}</div>
   `;
 
   container.appendChild(suggestionEl);
-  console.log('[UI] Showing combined prompt+suggestion for', field);
+  console.log('[UI] Showing', items.length, 'suggestion items for', field);
 }
 
 /**
@@ -380,7 +471,7 @@ function hideSuggestion() {
       }, 200);
     }
   }
-  currentSuggestion = { idea: null, field: null, text: null };
+  currentSuggestion = { idea: null, field: null, text: null, items: [] };
 }
 
 /**

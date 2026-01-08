@@ -160,9 +160,10 @@ function createOrUpdateField(idea, field, value) {
 
 /**
  * Accept the current suggestion and insert it into the field
+ * @param {number|null} itemIndex - Index of specific item to insert (1-based), null for all items
  * @returns {boolean} True if suggestion was accepted successfully
  */
-function acceptSuggestion() {
+function acceptSuggestion(itemIndex = null) {
   const UI = window.ContractUI;
   if (!UI) {
     console.warn('[Suggestions] ContractUI not available');
@@ -170,22 +171,47 @@ function acceptSuggestion() {
   }
 
   const suggestion = UI.getCurrentSuggestion();
-  if (!suggestion || !suggestion.idea || !suggestion.field || !suggestion.text) {
+  if (!suggestion || !suggestion.idea || !suggestion.field) {
     console.log('[Suggestions] No active suggestion to accept');
     return false;
   }
 
-  console.log('[Suggestions] Accepting suggestion for', suggestion.field);
+  const items = suggestion.items || [];
+  let textToInsert;
+  let itemCount;
+
+  if (itemIndex === null || items.length === 0) {
+    // Insert all items
+    textToInsert = suggestion.text;
+    itemCount = items.length || 1;
+    console.log('[Suggestions] Accepting ALL items for', suggestion.field);
+  } else {
+    // Insert specific item (1-based index)
+    const idx = itemIndex - 1;
+    if (idx < 0 || idx >= items.length) {
+      console.warn('[Suggestions] Invalid item index:', itemIndex);
+      return false;
+    }
+    textToInsert = items[idx];
+    itemCount = 1;
+    console.log('[Suggestions] Accepting item', itemIndex, 'for', suggestion.field);
+  }
+
+  if (!textToInsert) {
+    console.warn('[Suggestions] No text to insert');
+    return false;
+  }
 
   // Create or update the field with the suggestion text
-  const success = createOrUpdateField(suggestion.idea, suggestion.field, suggestion.text);
+  const success = createOrUpdateField(suggestion.idea, suggestion.field, textToInsert);
 
   if (success) {
     // Hide the suggestion overlay
     UI.hideSuggestion();
 
     // Show success toast
-    UI.showSuccess('Suggestion Accepted', `${suggestion.field} template inserted`);
+    const itemText = itemIndex === null ? `${itemCount} items` : `item ${itemIndex}`;
+    UI.showSuccess('Suggestion Accepted', `${suggestion.field}: ${itemText} inserted`);
 
     return true;
   } else {
@@ -196,29 +222,50 @@ function acceptSuggestion() {
 
 /**
  * Initialize keyboard listener for suggestion acceptance
- * Listens for Cmd+Enter (Mac) or Ctrl+Enter (Windows/Linux)
- * Note: Cmd+` is intercepted by macOS system shortcuts
+ * Listens for Ctrl+1 through Ctrl+9 for numbered item selection
+ * Ctrl+N (where N = items.length + 1) inserts all items
  */
 function initKeyboardListener() {
   document.addEventListener('keydown', (event) => {
-    // Check for Cmd+Enter (Mac) or Ctrl+Enter (Windows/Linux)
-    const isEnter = event.key === 'Enter' || event.code === 'Enter';
-    const hasModifier = event.metaKey || event.ctrlKey;
+    // Only handle Ctrl + number keys (1-9)
+    if (!event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) {
+      return;
+    }
+
+    // Check for number keys 1-9
+    const keyNum = parseInt(event.key, 10);
+    if (isNaN(keyNum) || keyNum < 1 || keyNum > 9) {
+      return;
+    }
 
     // Only trigger if there's an active suggestion visible
     const suggestion = window.ContractUI?.getCurrentSuggestion();
-    const hasSuggestion = suggestion && suggestion.idea && suggestion.field && suggestion.text;
+    const hasSuggestion = suggestion && suggestion.idea && suggestion.field;
 
-    if (isEnter && hasModifier && hasSuggestion) {
-      event.preventDefault();
-      event.stopPropagation();
+    if (!hasSuggestion) {
+      return;
+    }
 
-      console.log('[Suggestions] Keyboard shortcut triggered (Cmd/Ctrl+Enter)');
-      acceptSuggestion();
+    event.preventDefault();
+    event.stopPropagation();
+
+    const items = suggestion.items || [];
+    const allItemsNum = items.length + 1;
+
+    if (keyNum === allItemsNum) {
+      // Insert all items
+      console.log('[Suggestions] Keyboard shortcut triggered (Ctrl+' + keyNum + ') - Insert All');
+      acceptSuggestion(null);
+    } else if (keyNum <= items.length) {
+      // Insert specific item
+      console.log('[Suggestions] Keyboard shortcut triggered (Ctrl+' + keyNum + ')');
+      acceptSuggestion(keyNum);
+    } else {
+      console.log('[Suggestions] Invalid item number:', keyNum, '(only', items.length, 'items available)');
     }
   }, true); // Use capture phase to get event before Workflowy
 
-  console.log('[Suggestions] Keyboard listener initialized (Cmd/Ctrl + Enter)');
+  console.log('[Suggestions] Keyboard listener initialized (Ctrl + 1-9)');
 }
 
 // Export for use in other modules

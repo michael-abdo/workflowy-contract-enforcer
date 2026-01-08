@@ -73,10 +73,12 @@ class ContractObserver {
     this.ideaStore = new Map();
     this.trackedNodes = new Set(); // IDs of nodes we're watching
     this.pendingValidations = new Map(); // nodeId -> timeout
+    this.stateTimestamps = new Map(); // nodeId -> timestamp of last state change
     this.isInitialized = false;
     this.callbacks = {
       onStateChange: null,
       onValidationError: null,
+      onValidationWarning: null, // New callback for warnings
       onContractAdded: null,
       onContractRemoved: null,
       onFieldChange: null
@@ -91,7 +93,7 @@ class ContractObserver {
    * Initialize the observer
    * @param {Object} callbacks - Event callbacks
    */
-  init(callbacks = {}) {
+  async init(callbacks = {}) {
     try {
       if (this.isInitialized) {
         console.warn('[Observer] Already initialized');
@@ -100,6 +102,10 @@ class ContractObserver {
 
       console.log('[Observer] Starting initialization...');
       this.callbacks = { ...this.callbacks, ...callbacks };
+
+      // Load state timestamps from storage
+      console.log('[Observer] Loading state timestamps...');
+      await this.loadStateTimestamps();
 
       // Build initial store
       console.log('[Observer] Building initial store...');
@@ -115,6 +121,56 @@ class ContractObserver {
       console.error('[Observer] Initialization failed:', e);
       throw e;
     }
+  }
+
+  /**
+   * Load state timestamps from chrome.storage
+   */
+  async loadStateTimestamps() {
+    try {
+      if (!window.ContractStorage) {
+        console.warn('[Observer] ContractStorage not available');
+        return;
+      }
+
+      const timestamps = await window.ContractStorage.get('state_timestamps');
+      if (timestamps && typeof timestamps === 'object') {
+        this.stateTimestamps = new Map(Object.entries(timestamps));
+        console.log('[Observer] Loaded', this.stateTimestamps.size, 'state timestamps');
+      }
+    } catch (e) {
+      console.warn('[Observer] Failed to load state timestamps:', e);
+    }
+  }
+
+  /**
+   * Save state timestamp to chrome.storage
+   * @param {string} nodeId - Node ID
+   * @param {number} timestamp - Timestamp in ms
+   */
+  async saveStateTimestamp(nodeId, timestamp) {
+    this.stateTimestamps.set(nodeId, timestamp);
+
+    try {
+      if (!window.ContractStorage) {
+        return;
+      }
+
+      // Convert Map to object for storage
+      const timestampsObj = Object.fromEntries(this.stateTimestamps);
+      await window.ContractStorage.set('state_timestamps', timestampsObj);
+    } catch (e) {
+      console.warn('[Observer] Failed to save state timestamp:', e);
+    }
+  }
+
+  /**
+   * Get state timestamp for a node
+   * @param {string} nodeId - Node ID
+   * @returns {number|null} Timestamp or null
+   */
+  getStateTimestamp(nodeId) {
+    return this.stateTimestamps.get(nodeId) || null;
   }
 
   /**
@@ -313,6 +369,9 @@ class ContractObserver {
     const idea = ContractParser.buildIdea(item);
     if (!idea) return;
 
+    // Load state_changed_at from storage
+    idea.state_changed_at = this.getStateTimestamp(nodeId);
+
     // Check if this is a new contract
     if (!this.trackedNodes.has(nodeId)) {
       this.handleContractAdded(nodeId, idea);
@@ -336,6 +395,11 @@ class ContractObserver {
     // Check for validation errors
     if (validation.errors.length > 0) {
       this.handleValidationError(nodeId, idea, validation.errors);
+    }
+
+    // Check for validation warnings
+    if (validation.warnings && validation.warnings.length > 0) {
+      this.handleValidationWarning(nodeId, idea, validation.warnings);
     }
 
     // Trigger field change callback
@@ -384,6 +448,14 @@ class ContractObserver {
   handleStateChange(nodeId, idea, oldState, newState, validation) {
     console.log('[Observer] State change:', nodeId, oldState, '->', newState);
 
+    // Record timestamp of state change
+    const timestamp = Date.now();
+    this.saveStateTimestamp(nodeId, timestamp);
+
+    // Update idea with timestamp
+    idea.state_changed_at = timestamp;
+    this.ideaStore.set(nodeId, idea);
+
     // Update the state tag in Workflowy
     this.updateStateTag(nodeId, idea, newState);
 
@@ -403,6 +475,20 @@ class ContractObserver {
 
     if (this.callbacks.onValidationError) {
       this.callbacks.onValidationError(nodeId, idea, errors);
+    }
+  }
+
+  /**
+   * Handle validation warnings
+   * @param {string} nodeId
+   * @param {Object} idea
+   * @param {Array} warnings
+   */
+  handleValidationWarning(nodeId, idea, warnings) {
+    console.warn('[Observer] Validation warnings for', nodeId, ':', warnings);
+
+    if (this.callbacks.onValidationWarning) {
+      this.callbacks.onValidationWarning(nodeId, idea, warnings);
     }
   }
 

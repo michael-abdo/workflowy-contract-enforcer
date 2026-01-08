@@ -310,6 +310,63 @@ function injectStyles() {
     .contract-suggestion-all .contract-suggestion-value {
       font-weight: 600;
     }
+
+    /* Checkbox styles for multi-select */
+    .contract-suggestion-item {
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .contract-suggestion-item:hover {
+      background: rgba(0, 0, 0, 0.25);
+    }
+
+    .contract-suggestion-item.selected {
+      background: rgba(255, 255, 255, 0.15);
+    }
+
+    .contract-suggestion-checkbox {
+      width: 16px;
+      height: 16px;
+      margin-right: 4px;
+      cursor: pointer;
+      accent-color: white;
+      flex-shrink: 0;
+    }
+
+    /* Insert Selected button */
+    .contract-suggestion-actions {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(255, 255, 255, 0.2);
+      display: flex;
+      gap: 8px;
+    }
+
+    .contract-suggestion-btn {
+      background: rgba(255, 255, 255, 0.2);
+      border: none;
+      padding: 6px 12px;
+      border-radius: 4px;
+      color: white;
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .contract-suggestion-btn:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+
+    .contract-suggestion-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .contract-suggestion-btn-primary {
+      background: rgba(255, 255, 255, 0.3);
+      font-weight: 600;
+    }
   `;
 
   document.head.appendChild(styles);
@@ -369,7 +426,8 @@ let currentSuggestion = {
   idea: null,
   field: null,
   text: null,
-  items: []  // Array of individual items for numbered selection
+  items: [],  // Array of individual items for numbered selection
+  selectedIndices: new Set()  // Set of selected item indices (0-based)
 };
 
 /**
@@ -386,8 +444,52 @@ function parseSuggestionItems(text) {
 }
 
 /**
+ * Toggle selection of an item by index
+ * @param {number} index - 0-based index of the item
+ */
+function toggleItemSelection(index) {
+  if (currentSuggestion.selectedIndices.has(index)) {
+    currentSuggestion.selectedIndices.delete(index);
+  } else {
+    currentSuggestion.selectedIndices.add(index);
+  }
+  updateSelectionUI();
+}
+
+/**
+ * Update the UI to reflect current selection state
+ */
+function updateSelectionUI() {
+  const container = document.getElementById(SUGGESTION_CONTAINER_ID);
+  if (!container) return;
+
+  // Update item selected states
+  const items = container.querySelectorAll('.contract-suggestion-item[data-index]');
+  items.forEach(item => {
+    const index = parseInt(item.dataset.index, 10);
+    const checkbox = item.querySelector('.contract-suggestion-checkbox');
+    if (currentSuggestion.selectedIndices.has(index)) {
+      item.classList.add('selected');
+      if (checkbox) checkbox.checked = true;
+    } else {
+      item.classList.remove('selected');
+      if (checkbox) checkbox.checked = false;
+    }
+  });
+
+  // Update Insert Selected button
+  const insertBtn = container.querySelector('.contract-suggestion-btn-insert');
+  if (insertBtn) {
+    const count = currentSuggestion.selectedIndices.size;
+    insertBtn.textContent = count > 0 ? `Insert Selected (${count})` : 'Insert Selected';
+    insertBtn.disabled = count === 0;
+  }
+}
+
+/**
  * Show a combined prompt + suggestion overlay for a field
  * Displays numbered items with Ctrl+1, Ctrl+2, etc. shortcuts
+ * Supports click-to-select and multi-select with checkboxes
  * @param {Object} idea - Current idea object
  * @param {string} field - Field name (e.g., 'intent')
  * @param {string} suggestionText - The suggestion text to show
@@ -399,8 +501,8 @@ function showSuggestion(idea, field, suggestionText) {
   // Parse into individual items
   const items = parseSuggestionItems(suggestionText);
 
-  // Store current state for acceptance
-  currentSuggestion = { idea, field, text: suggestionText, items };
+  // Store current state for acceptance (reset selection)
+  currentSuggestion = { idea, field, text: suggestionText, items, selectedIndices: new Set() };
 
   // Hide the separate prompt since we're combining them
   hideNextField();
@@ -414,36 +516,26 @@ function showSuggestion(idea, field, suggestionText) {
   const suggestionEl = document.createElement('div');
   suggestionEl.className = 'contract-suggestion';
 
-  // Build numbered items HTML
+  // Build numbered items HTML with checkboxes
   let itemsHtml = '';
-  if (items.length > 1) {
-    // Multiple items - show each with Ctrl+N shortcut
-    items.forEach((item, index) => {
-      const num = index + 1;
-      itemsHtml += `
-        <div class="contract-suggestion-item">
-          <span class="contract-suggestion-key">Ctrl+${num}</span>
-          <span class="contract-suggestion-value">${escapeHtml(item)}</span>
-        </div>
-      `;
-    });
-    // Add "Insert All" option
-    const allNum = items.length + 1;
+  items.forEach((item, index) => {
+    const num = index + 1;
     itemsHtml += `
-      <div class="contract-suggestion-item contract-suggestion-all">
-        <span class="contract-suggestion-key">Ctrl+${allNum}</span>
-        <span class="contract-suggestion-value">Insert All</span>
+      <div class="contract-suggestion-item" data-index="${index}">
+        <input type="checkbox" class="contract-suggestion-checkbox" />
+        <span class="contract-suggestion-key">Ctrl+${num}</span>
+        <span class="contract-suggestion-value">${escapeHtml(item)}</span>
       </div>
     `;
-  } else {
-    // Single item - just show Ctrl+1
-    itemsHtml = `
-      <div class="contract-suggestion-item">
-        <span class="contract-suggestion-key">Ctrl+1</span>
-        <span class="contract-suggestion-value">${escapeHtml(items[0] || suggestionText)}</span>
-      </div>
-    `;
-  }
+  });
+
+  // Add actions row with Insert All and Insert Selected
+  const actionsHtml = items.length > 0 ? `
+    <div class="contract-suggestion-actions">
+      <button class="contract-suggestion-btn contract-suggestion-btn-insert" disabled>Insert Selected</button>
+      <button class="contract-suggestion-btn contract-suggestion-btn-primary contract-suggestion-btn-all">Insert All (Ctrl+${items.length + 1})</button>
+    </div>
+  ` : '';
 
   suggestionEl.innerHTML = `
     <div class="contract-suggestion-header">
@@ -451,9 +543,54 @@ function showSuggestion(idea, field, suggestionText) {
     </div>
     <div class="contract-suggestion-question">${escapeHtml(prompt)}</div>
     <div class="contract-suggestion-items">${itemsHtml}</div>
+    ${actionsHtml}
   `;
 
   container.appendChild(suggestionEl);
+
+  // Attach click handlers to items
+  const itemEls = suggestionEl.querySelectorAll('.contract-suggestion-item[data-index]');
+  itemEls.forEach(itemEl => {
+    itemEl.addEventListener('click', (e) => {
+      // Prevent double-toggle if clicking directly on checkbox
+      if (e.target.classList.contains('contract-suggestion-checkbox')) {
+        e.stopPropagation();
+      }
+      const index = parseInt(itemEl.dataset.index, 10);
+      toggleItemSelection(index);
+    });
+
+    // Handle checkbox direct clicks
+    const checkbox = itemEl.querySelector('.contract-suggestion-checkbox');
+    if (checkbox) {
+      checkbox.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const index = parseInt(itemEl.dataset.index, 10);
+        toggleItemSelection(index);
+      });
+    }
+  });
+
+  // Attach click handler to Insert Selected button
+  const insertBtn = suggestionEl.querySelector('.contract-suggestion-btn-insert');
+  if (insertBtn) {
+    insertBtn.addEventListener('click', () => {
+      if (window.ContractSuggestions?.acceptSelectedItems) {
+        window.ContractSuggestions.acceptSelectedItems();
+      }
+    });
+  }
+
+  // Attach click handler to Insert All button
+  const allBtn = suggestionEl.querySelector('.contract-suggestion-btn-all');
+  if (allBtn) {
+    allBtn.addEventListener('click', () => {
+      if (window.ContractSuggestions?.acceptSuggestion) {
+        window.ContractSuggestions.acceptSuggestion(null);
+      }
+    });
+  }
+
   console.log('[UI] Showing', items.length, 'suggestion items for', field);
 }
 
@@ -471,15 +608,23 @@ function hideSuggestion() {
       }, 200);
     }
   }
-  currentSuggestion = { idea: null, field: null, text: null, items: [] };
+  currentSuggestion = { idea: null, field: null, text: null, items: [], selectedIndices: new Set() };
 }
 
 /**
  * Get the current suggestion state
- * @returns {Object} Current suggestion { idea, field, text }
+ * @returns {Object} Current suggestion { idea, field, text, items, selectedIndices }
  */
 function getCurrentSuggestion() {
   return currentSuggestion;
+}
+
+/**
+ * Get the currently selected item indices
+ * @returns {number[]} Array of selected indices (0-based)
+ */
+function getSelectedIndices() {
+  return Array.from(currentSuggestion.selectedIndices);
 }
 
 /**
@@ -759,6 +904,7 @@ window.ContractUI = {
   showSuggestion,
   hideSuggestion,
   getCurrentSuggestion,
+  getSelectedIndices,
 
   // Validation feedback
   showValidationErrors,

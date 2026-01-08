@@ -528,7 +528,7 @@ function get_field_suggestion(field, idea = null) {
           // Try each alias until we find values
           const aliases = fieldAliases[field] || [field];
           for (const label of aliases) {
-            const projectValues = window.ContractParser.getProjectFieldValues(projectItem, label);
+            const projectValues = window.ContractParser.getProjectFieldValuesDeep(projectItem, label);
             if (projectValues && projectValues.length > 0) {
               console.log(`[Integrity] Found ${field} values from project (label: ${label}):`, projectValues);
               // Format based on field type - most fields support multiple items

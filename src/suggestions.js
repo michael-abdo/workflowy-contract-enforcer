@@ -268,11 +268,69 @@ function initKeyboardListener() {
   console.log('[Suggestions] Keyboard listener initialized (Ctrl + 1-9)');
 }
 
+/**
+ * Accept the currently selected items (multi-select)
+ * Inserts all items that have been checked via click/checkbox
+ * @returns {boolean} True if items were accepted successfully
+ */
+function acceptSelectedItems() {
+  const UI = window.ContractUI;
+  if (!UI) {
+    console.warn('[Suggestions] ContractUI not available');
+    return false;
+  }
+
+  const suggestion = UI.getCurrentSuggestion();
+  if (!suggestion || !suggestion.idea || !suggestion.field) {
+    console.log('[Suggestions] No active suggestion to accept');
+    return false;
+  }
+
+  const selectedIndices = UI.getSelectedIndices();
+  if (selectedIndices.length === 0) {
+    console.log('[Suggestions] No items selected');
+    return false;
+  }
+
+  const items = suggestion.items || [];
+
+  // Collect selected items in order
+  const selectedItems = selectedIndices
+    .sort((a, b) => a - b)
+    .map(idx => items[idx])
+    .filter(item => item);
+
+  if (selectedItems.length === 0) {
+    console.warn('[Suggestions] No valid items to insert');
+    return false;
+  }
+
+  const textToInsert = selectedItems.join('\n');
+  console.log('[Suggestions] Accepting', selectedItems.length, 'selected items for', suggestion.field);
+
+  // Create or update the field with the selected items
+  const success = createOrUpdateField(suggestion.idea, suggestion.field, textToInsert);
+
+  if (success) {
+    // Hide the suggestion overlay
+    UI.hideSuggestion();
+
+    // Show success toast
+    UI.showSuccess('Suggestion Accepted', `${suggestion.field}: ${selectedItems.length} items inserted`);
+
+    return true;
+  } else {
+    UI.showError('Failed to Accept', 'Could not insert selected items');
+    return false;
+  }
+}
+
 // Export for use in other modules
 window.ContractSuggestions = {
   findFieldNode,
   createOrUpdateField,
   acceptSuggestion,
+  acceptSelectedItems,
   initKeyboardListener
 };
 

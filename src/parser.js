@@ -656,6 +656,61 @@ function getProjectFieldValues(projectItem, fieldLabel) {
   return values.length > 0 ? values : null;
 }
 
+/**
+ * Get field values from a project node, recursively collecting leaf nodes
+ * Handles nested structures like:
+ *   System Reference
+ *     - Credentials
+ *       - Credential A
+ *       - Credential B
+ *     - Documents
+ *       - Doc A
+ * Returns: ["Credential A", "Credential B", "Doc A"]
+ *
+ * @param {Object} projectItem - Workflowy project item (#project node)
+ * @param {string} fieldLabel - Label to search for (e.g., 'System Reference')
+ * @param {number} maxDepth - Maximum recursion depth (default 3)
+ * @returns {string[]|null} Array of leaf node names, or null if field not found
+ */
+function getProjectFieldValuesDeep(projectItem, fieldLabel, maxDepth = 3) {
+  if (!projectItem) return null;
+
+  // Find the field child under project
+  const fieldChild = findChildByLabel(projectItem, fieldLabel);
+  if (!fieldChild) return null;
+
+  const values = [];
+
+  // Recursive helper to collect leaf nodes
+  function collectLeaves(item, depth) {
+    if (depth > maxDepth) return;
+
+    const children = item.getChildren ? item.getChildren() : [];
+
+    if (children.length === 0) {
+      // Leaf node - collect its name
+      const name = item.getName ? item.getName() : (item.data?.nm || '');
+      const cleanName = stripHtml(name).trim();
+      if (cleanName !== '') {
+        values.push(cleanName);
+      }
+    } else {
+      // Has children - recurse into each
+      for (const child of children) {
+        collectLeaves(child, depth + 1);
+      }
+    }
+  }
+
+  // Start collecting from field's children
+  const topChildren = fieldChild.getChildren ? fieldChild.getChildren() : [];
+  for (const child of topChildren) {
+    collectLeaves(child, 1);
+  }
+
+  return values.length > 0 ? values : null;
+}
+
 // Export for use in other modules
 window.ContractParser = {
   CONTRACT_TAG,
@@ -672,6 +727,7 @@ window.ContractParser = {
   findChildByLabel,
   findFieldChild,
   getProjectFieldValues,
+  getProjectFieldValuesDeep,
   extractFieldContent,
   detectInheritancePointer,
   parseContractFields,

@@ -88,13 +88,13 @@ function createMirrorNode(parentItem, priority, sourceId) {
       }
     }
 
-    // Fallback: Create item and set up mirror relationship manually
-    // Workflowy mirrors use ((id)) format in name for display
+    // Fallback: Copy the source item's text content
+    // Note: ((id)) syntax doesn't work in Workflowy - use actual text
     const childItem = WF.createItem(parentItem, priority);
     if (childItem) {
-      // Set the mirror reference - Workflowy recognizes ((id)) syntax
-      WF.setItemName(childItem, `((${sourceId}))`);
-      console.log('[Suggestions] Created mirror via ((id)) syntax');
+      const sourceName = sourceItem.getName ? sourceItem.getName() : '';
+      WF.setItemName(childItem, sourceName);
+      console.log('[Suggestions] Created node with source text:', sourceName);
       return childItem;
     }
   } catch (e) {

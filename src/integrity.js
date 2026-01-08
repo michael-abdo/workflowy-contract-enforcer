@@ -507,15 +507,15 @@ function get_field_prompt(field) {
 function get_field_suggestion(field, idea = null) {
   const ideaTitle = idea?.title || '[this idea]';
 
-  // Map field names to project labels
-  const fieldToLabel = {
-    intent: 'Intent',
-    stakeholders: 'Stakeholders',
-    owner: 'Owner',
-    system_ref: 'System Reference',
-    qa_doc: 'QA Documents',  // Note: project uses "QA Documents" (plural)
-    update_set: 'Update Set',
-    qa_results: 'QA Results'
+  // Map field names to multiple label aliases (try in order)
+  const fieldAliases = {
+    intent: ['Intent', 'Goal', 'Objective'],
+    stakeholders: ['Stakeholders', 'Stakeholder', 'Team', 'People'],
+    owner: ['Owner', 'Owners', 'Assigned', 'Responsible'],
+    system_ref: ['System Reference', 'System Ref', 'Systems', 'Reference', 'Paths', 'Credentials'],
+    qa_doc: ['QA Document', 'QA Documents', 'QA Doc', 'QA', 'Testing', 'Tests'],
+    update_set: ['Update Set', 'Updates', 'Actions', 'Tasks', 'Deltas'],
+    qa_results: ['QA Results', 'Results', 'Evidence', 'Proof']
   };
 
   // Try to get values from parent #project
@@ -525,23 +525,26 @@ function get_field_suggestion(field, idea = null) {
       if (contractItem) {
         const projectItem = window.ContractParser.findProjectAncestor(contractItem);
         if (projectItem) {
-          const label = fieldToLabel[field];
-          const projectValues = window.ContractParser.getProjectFieldValues(projectItem, label);
-
-          if (projectValues && projectValues.length > 0) {
-            console.log(`[Integrity] Found ${field} values from project:`, projectValues);
-            // Format based on field type
-            if (field === 'stakeholders' || field === 'qa_doc' || field === 'update_set') {
-              // Multi-line format
-              return projectValues.map(v => `- ${v}`).join('\n');
-            } else if (field === 'system_ref') {
-              // Join paths with newlines
-              return projectValues.join('\n');
-            } else {
-              // Single value or first value
-              return projectValues[0];
+          // Try each alias until we find values
+          const aliases = fieldAliases[field] || [field];
+          for (const label of aliases) {
+            const projectValues = window.ContractParser.getProjectFieldValues(projectItem, label);
+            if (projectValues && projectValues.length > 0) {
+              console.log(`[Integrity] Found ${field} values from project (label: ${label}):`, projectValues);
+              // Format based on field type
+              if (field === 'stakeholders' || field === 'qa_doc' || field === 'update_set') {
+                // Multi-line format with bullet prefix
+                return projectValues.map(v => `- ${v}`).join('\n');
+              } else if (field === 'system_ref') {
+                // Join paths with newlines
+                return projectValues.join('\n');
+              } else {
+                // Single value or first value
+                return projectValues[0];
+              }
             }
           }
+          console.log(`[Integrity] No project values found for ${field} (tried: ${aliases.join(', ')})`);
         }
       }
     } catch (e) {

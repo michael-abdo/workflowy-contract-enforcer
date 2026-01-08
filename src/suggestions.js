@@ -88,23 +88,29 @@ function createOrUpdateField(idea, field, value) {
   // Check if field already exists
   let fieldItem = findFieldNode(idea, field);
 
+  // Split multi-line values into separate lines for individual nodes
+  const lines = value.split('\n').filter(line => line.trim() !== '');
+
   if (fieldItem) {
-    // Update existing field - add as child bullet at cursor position
+    // Update existing field - add children at cursor position
     try {
       if (typeof WF !== 'undefined' && WF.createItem) {
         const insertPriority = getCursorInsertPriority(fieldItem);
-        const childItem = WF.createItem(fieldItem, insertPriority);
-        if (childItem) {
-          WF.setItemName(childItem, value);
-          console.log('[Suggestions] Added child to existing field at position:', insertPriority);
-          return true;
-        }
+        // Create a child node for each line
+        lines.forEach((line, index) => {
+          const childItem = WF.createItem(fieldItem, insertPriority + index);
+          if (childItem) {
+            WF.setItemName(childItem, line.trim());
+          }
+        });
+        console.log('[Suggestions] Added', lines.length, 'children to existing field');
+        return true;
       }
     } catch (e) {
       console.error('[Suggestions] Error updating field:', e);
     }
   } else {
-    // Create new field under contract with suggestion as child
+    // Create new field under contract with suggestion as children
     try {
       if (typeof WF !== 'undefined' && WF.createItem) {
         // Get cursor position for insertion
@@ -114,12 +120,14 @@ function createOrUpdateField(idea, field, value) {
         const newItem = WF.createItem(contractItem, insertPriority);
         if (newItem) {
           WF.setItemName(newItem, fieldLabel);
-          // Create child with suggestion text
-          const childItem = WF.createItem(newItem, 0);
-          if (childItem) {
-            WF.setItemName(childItem, value);
-          }
-          console.log('[Suggestions] Created new field with child at position:', insertPriority);
+          // Create a child node for each line
+          lines.forEach((line, index) => {
+            const childItem = WF.createItem(newItem, index);
+            if (childItem) {
+              WF.setItemName(childItem, line.trim());
+            }
+          });
+          console.log('[Suggestions] Created field with', lines.length, 'children at position:', insertPriority);
           return true;
         }
       }

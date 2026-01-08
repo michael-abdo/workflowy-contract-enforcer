@@ -78,22 +78,22 @@ function createMirrorNode(parentItem, priority, sourceId) {
       return null;
     }
 
-    // Use WF.duplicateItem with mirror flag if available
-    if (typeof WF.duplicateItem === 'function') {
-      // Try to create a mirror using duplicate
-      const mirror = WF.duplicateItem(sourceItem, parentItem, priority, { asMirror: true });
-      if (mirror) {
-        console.log('[Suggestions] Created mirror via duplicateItem');
-        return mirror;
+    // Use the internal mirrorUnder API on item.data
+    if (parentItem.data && typeof parentItem.data.mirrorUnder === 'function' && sourceItem.data) {
+      const result = parentItem.data.mirrorUnder([sourceItem.data], priority);
+      if (result && result.length > 0) {
+        console.log('[Suggestions] Created mirror via mirrorUnder API');
+        return result[0];
       }
     }
 
-    // Fallback: Create mirror using ((text)) syntax
+    // Fallback: Create regular item with source text (not a true mirror)
+    console.warn('[Suggestions] mirrorUnder not available, falling back to text copy');
     const childItem = WF.createItem(parentItem, priority);
     if (childItem) {
       const sourceName = sourceItem.getName ? sourceItem.getName() : '';
-      WF.setItemName(childItem, `((${sourceName}))`);
-      console.log('[Suggestions] Created mirror with text:', sourceName);
+      WF.setItemName(childItem, sourceName);
+      console.log('[Suggestions] Created text copy:', sourceName);
       return childItem;
     }
   } catch (e) {

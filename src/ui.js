@@ -246,12 +246,19 @@ function injectStyles() {
       font-family: monospace;
     }
 
+    .contract-suggestion-question {
+      font-size: 13px;
+      line-height: 1.4;
+      margin-bottom: 8px;
+      opacity: 0.95;
+    }
+
     .contract-suggestion-text {
       font-style: italic;
-      opacity: 0.95;
+      opacity: 0.85;
       line-height: 1.5;
       white-space: pre-wrap;
-      background: rgba(0, 0, 0, 0.1);
+      background: rgba(0, 0, 0, 0.15);
       padding: 8px;
       border-radius: 4px;
       font-size: 12px;
@@ -322,7 +329,7 @@ let currentSuggestion = {
 };
 
 /**
- * Show a suggestion overlay for a field
+ * Show a combined prompt + suggestion overlay for a field
  * @param {Object} idea - Current idea object
  * @param {string} field - Field name (e.g., 'intent')
  * @param {string} suggestionText - The suggestion text to show
@@ -334,22 +341,29 @@ function showSuggestion(idea, field, suggestionText) {
   // Store current state for acceptance
   currentSuggestion = { idea, field, text: suggestionText };
 
+  // Hide the separate prompt since we're combining them
+  hideNextField();
+
   // Clear existing suggestion
   container.innerHTML = '';
+
+  // Get the prompt question for this field
+  const prompt = window.ContractIntegrity?.get_field_prompt(field) || `Provide ${field}`;
 
   const suggestionEl = document.createElement('div');
   suggestionEl.className = 'contract-suggestion';
 
   suggestionEl.innerHTML = `
     <div class="contract-suggestion-header">
-      <div class="contract-suggestion-field">${formatFieldName(field)} Suggestion</div>
+      <div class="contract-suggestion-field">${formatFieldName(field)}</div>
       <div class="contract-suggestion-shortcut">⌘ + Enter</div>
     </div>
+    <div class="contract-suggestion-question">${escapeHtml(prompt)}</div>
     <div class="contract-suggestion-text">${escapeHtml(suggestionText)}</div>
   `;
 
   container.appendChild(suggestionEl);
-  console.log('[UI] Showing suggestion for', field);
+  console.log('[UI] Showing combined prompt+suggestion for', field);
 }
 
 /**

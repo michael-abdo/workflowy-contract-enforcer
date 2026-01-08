@@ -35,6 +35,28 @@ function findFieldNode(idea, field) {
 }
 
 /**
+ * Get the insertion priority based on cursor position
+ * @param {Object} contractItem - The contract item to insert under
+ * @returns {number} Priority for insertion (after cursor, or 0 if no cursor)
+ */
+function getCursorInsertPriority(contractItem) {
+  try {
+    const focused = WF.focusedItem();
+    if (!focused) return 0;
+
+    // Check if cursor is within the contract (focused item's parent is the contract)
+    const parent = focused.getParent();
+    if (parent && parent.getId() === contractItem.getId()) {
+      // Insert after the cursor position
+      return focused.getPriority() + 1;
+    }
+  } catch (e) {
+    console.warn('[Suggestions] Could not get cursor position:', e);
+  }
+  return 0; // Default to top
+}
+
+/**
  * Create a new field node under the contract if it doesn't exist
  * @param {Object} idea - The idea object
  * @param {string} field - The field name
@@ -67,13 +89,14 @@ function createOrUpdateField(idea, field, value) {
   let fieldItem = findFieldNode(idea, field);
 
   if (fieldItem) {
-    // Update existing field - add as child bullet
+    // Update existing field - add as child bullet at cursor position
     try {
       if (typeof WF !== 'undefined' && WF.createItem) {
-        const childItem = WF.createItem(fieldItem, 0); // Insert as first child
+        const insertPriority = getCursorInsertPriority(fieldItem);
+        const childItem = WF.createItem(fieldItem, insertPriority);
         if (childItem) {
           WF.setItemName(childItem, value);
-          console.log('[Suggestions] Added child to existing field:', field);
+          console.log('[Suggestions] Added child to existing field at position:', insertPriority);
           return true;
         }
       }
@@ -84,8 +107,11 @@ function createOrUpdateField(idea, field, value) {
     // Create new field under contract with suggestion as child
     try {
       if (typeof WF !== 'undefined' && WF.createItem) {
+        // Get cursor position for insertion
+        const insertPriority = getCursorInsertPriority(contractItem);
+
         // Create the field with label as name
-        const newItem = WF.createItem(contractItem, 0); // Insert at beginning
+        const newItem = WF.createItem(contractItem, insertPriority);
         if (newItem) {
           WF.setItemName(newItem, fieldLabel);
           // Create child with suggestion text
@@ -93,7 +119,7 @@ function createOrUpdateField(idea, field, value) {
           if (childItem) {
             WF.setItemName(childItem, value);
           }
-          console.log('[Suggestions] Created new field with child:', field);
+          console.log('[Suggestions] Created new field with child at position:', insertPriority);
           return true;
         }
       }

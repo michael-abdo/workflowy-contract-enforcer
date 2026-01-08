@@ -531,16 +531,13 @@ function get_field_suggestion(field, idea = null) {
             const projectValues = window.ContractParser.getProjectFieldValues(projectItem, label);
             if (projectValues && projectValues.length > 0) {
               console.log(`[Integrity] Found ${field} values from project (label: ${label}):`, projectValues);
-              // Format based on field type
-              if (field === 'stakeholders' || field === 'qa_doc' || field === 'update_set') {
-                // Multi-line format (no bullet prefix - inserted as separate nodes)
-                return projectValues.join('\n');
-              } else if (field === 'system_ref') {
-                // Join paths with newlines
-                return projectValues.join('\n');
-              } else {
-                // Single value or first value
+              // Format based on field type - most fields support multiple items
+              if (field === 'owner') {
+                // Owner is typically single value
                 return projectValues[0];
+              } else {
+                // Multi-line format for all other fields (inserted as separate nodes)
+                return projectValues.join('\n');
               }
             }
           }

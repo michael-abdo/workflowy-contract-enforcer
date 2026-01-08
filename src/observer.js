@@ -616,9 +616,10 @@ class ContractObserver {
   refreshOnNavigation() {
     console.log('[Observer] Navigation detected, refreshing...');
 
-    // Hide prompt immediately
+    // Hide prompt and suggestion immediately
     if (window.ContractUI) {
       window.ContractUI.hideNextField();
+      window.ContractUI.hideSuggestion();
     }
 
     // Refresh store (for internal tracking)
@@ -632,7 +633,7 @@ class ContractObserver {
 
   /**
    * Check if currently zoomed into a descendant of a contract
-   * If so, show the prompt for that contract
+   * If so, show the prompt and suggestion for that contract
    */
   checkContractContext() {
     if (!window.ContractParser || !window.ContractIntegrity) return;
@@ -653,6 +654,12 @@ class ContractObserver {
         const validation = window.ContractIntegrity.validate_idea(this.ideaStore, idea);
         if (window.ContractUI) {
           window.ContractUI.showNextField(idea, validation);
+
+          // Show suggestion for the next field if there is one
+          if (validation.next_field) {
+            const suggestionText = window.ContractIntegrity.get_field_suggestion(validation.next_field, idea);
+            window.ContractUI.showSuggestion(idea, validation.next_field, suggestionText);
+          }
         }
       }
     }

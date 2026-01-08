@@ -149,51 +149,83 @@ function findChildByLabel(item, label) {
 }
 
 /**
+ * Find the actual original item for a mirror
+ * Uses _cachedOriginalItem first, then falls back to mirrorRootIds search
+ * @param {Object} mirrorItem - The mirror item (from WF.getItemById)
+ * @returns {string|null} The original item's ID, or null
+ */
+function findOriginalId(mirrorItem) {
+  if (!mirrorItem) return null;
+
+  const data = mirrorItem.data || mirrorItem;
+
+  // Method 1: Use _cachedOriginalItem if available
+  if (data._cachedOriginalItem) {
+    const originalId = data._cachedOriginalItem.id || data._cachedOriginalItem.data?.id;
+    if (originalId) {
+      return originalId;
+    }
+  }
+
+  // Method 2: Check mirrorRootIds for an ID with actual content
+  const mirrorRootIds = data.metadata?.mirror?.mirrorRootIds;
+  if (mirrorRootIds) {
+    const selfId = data.id;
+    const ids = Object.keys(mirrorRootIds).filter(id => id !== selfId);
+
+    for (const id of ids) {
+      try {
+        const item = WF.getItemById(id);
+        if (item) {
+          const nm = item.data?.nm || '';
+          if (nm && nm.trim() !== '') {
+            return id;
+          }
+        }
+      } catch (e) {
+        // Skip
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
  * Get the text content of a child item, resolving mirrors if needed
  * Mirror items have empty nm field - text comes from the original
+ * Uses _cachedOriginalItem to find the actual original
  * @param {Object} child - Child data object from ch array
  * @returns {string} The text content
  */
 function getChildText(child) {
   if (!child) return '';
 
-  // Check if this is a mirror (has originalId in metadata)
-  if (child.metadata?.mirror?.originalId) {
-    const originalId = child.metadata.mirror.originalId;
-    try {
-      const originalItem = WF.getItemById(originalId);
-      if (originalItem) {
-        const originalName = originalItem.getName ? originalItem.getName() : (originalItem.data?.nm || '');
-        return stripHtml(originalName);
-      }
-    } catch (e) {
-      console.warn('[Parser] Error resolving mirror original:', originalId, e);
-    }
-  }
-
-  // If nm is empty, fetch fresh item to get metadata (handles stale ch array)
-  if (child.id && (!child.nm || child.nm === '')) {
-    try {
-      const freshItem = WF.getItemById(child.id);
-      if (freshItem) {
-        const freshData = freshItem.data;
-        // Check if fresh data has mirror info
-        if (freshData?.metadata?.mirror?.originalId) {
-          const originalId = freshData.metadata.mirror.originalId;
-          const originalItem = WF.getItemById(originalId);
-          if (originalItem) {
-            const originalName = originalItem.getName ? originalItem.getName() : (originalItem.data?.nm || '');
-            return stripHtml(originalName);
+  // If nm is empty, this might be a mirror - fetch fresh item and resolve
+  if (!child.nm || child.nm === '') {
+    if (child.id) {
+      try {
+        const freshItem = WF.getItemById(child.id);
+        if (freshItem) {
+          // Try to find the original using _cachedOriginalItem
+          const originalId = findOriginalId(freshItem);
+          if (originalId) {
+            const originalItem = WF.getItemById(originalId);
+            if (originalItem) {
+              const originalName = originalItem.getName ? originalItem.getName() : (originalItem.data?.nm || '');
+              return stripHtml(originalName);
+            }
           }
         }
+      } catch (e) {
+        console.warn('[Parser] Error resolving mirror:', child.id, e);
       }
-    } catch (e) {
-      // Ignore errors fetching fresh item
     }
+    return '';
   }
 
-  // Regular item - use nm directly
-  return stripHtml(child.nm || '');
+  // Regular item with content - use nm directly
+  return stripHtml(child.nm);
 }
 
 /**
@@ -245,6 +277,7 @@ function extractFieldContent(fieldItem, asList = false) {
  * Detect inheritance pointer in a field's content
  * Inheritance pointers are mirrors that point to OTHER #contract nodes
  * Mirrors pointing to #project values are NOT inheritance - they're local values
+ * Uses _cachedOriginalItem to find the actual original
  * @param {Object} fieldItem - The field node
  * @returns {string|null} The referenced contract ID, or null if no inheritance
  */
@@ -254,40 +287,28 @@ function detectInheritancePointer(fieldItem) {
   const children = fieldItem.data.ch || [];
 
   for (const child of children) {
-    let originalId = null;
-
-    // Check if child has mirror metadata with originalId
-    if (child.metadata?.mirror?.originalId) {
-      originalId = child.metadata.mirror.originalId;
+    // Skip non-mirror children (they have content in nm)
+    if (child.nm && child.nm.trim() !== '') {
+      continue;
     }
 
-    // Also try fetching the item to check for mirror properties
-    if (!originalId && child.id) {
+    // This might be a mirror - fetch fresh item and check
+    if (child.id) {
       try {
         const childItem = WF.getItemById(child.id);
         if (childItem && childItem.data.reactToOriginalMarkChanged) {
-          // This is a mirror - get the original ID
-          if (childItem.data.metadata?.mirror?.originalId) {
-            originalId = childItem.data.metadata.mirror.originalId;
+          // Confirmed mirror - find the original
+          const originalId = findOriginalId(childItem);
+          if (originalId) {
+            const originalItem = WF.getItemById(originalId);
+            if (originalItem) {
+              // Check if original is under a #contract (inheritance)
+              if (hasContractAncestor(originalItem) || hasTag(originalItem.data?.nm || '', CONTRACT_TAG)) {
+                return originalId;
+              }
+              // Original is under #project - NOT inheritance, it's a local value
+            }
           }
-        }
-      } catch (e) {
-        // Ignore errors fetching item
-      }
-    }
-
-    // If we found a mirror, check if it points to a CONTRACT (not #project values)
-    if (originalId) {
-      try {
-        const originalItem = WF.getItemById(originalId);
-        if (originalItem) {
-          // Check if original or any ancestor is a #contract
-          // If so, this is an inheritance pointer
-          if (hasContractAncestor(originalItem) || hasTag(originalItem.data?.nm || '', CONTRACT_TAG)) {
-            return originalId;
-          }
-          // If original is under #project, it's NOT inheritance - it's a local value reference
-          // So we don't return anything
         }
       } catch (e) {
         // Ignore errors

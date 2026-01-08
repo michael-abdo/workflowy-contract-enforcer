@@ -59,11 +59,17 @@ item.data.lastOriginalItemVersion          // Version tracking
 ```javascript
 const mirrorRootIds = item.data.metadata?.mirror?.mirrorRootIds;
 if (mirrorRootIds) {
-  const originalId = Object.keys(mirrorRootIds)[0];
-  const originalItem = WF.getItemById(originalId);
-  console.log("Original item:", originalItem.data.nm);
+  // IMPORTANT: mirrorRootIds may contain the item's own ID - filter it out!
+  const ids = Object.keys(mirrorRootIds).filter(id => id !== item.data.id);
+  const originalId = ids[0];
+  if (originalId) {
+    const originalItem = WF.getItemById(originalId);
+    console.log("Original item:", originalItem.data.nm);
+  }
 }
 ```
+
+**Gotcha**: `mirrorRootIds` is an object that can contain multiple IDs including the mirror item's own ID. Always filter out self-references when looking for the original.
 
 ## Timestamp Conversion
 

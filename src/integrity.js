@@ -499,10 +499,10 @@ function get_field_prompt(field) {
 /**
  * Get suggestion/template for a specific field
  * First checks parent #project for existing values, falls back to generic templates
- * Returns object with display text and items array (with IDs for mirror creation)
+ * Returns object with tree structure for collapsible UI display
  * @param {string} field - Field name
  * @param {Object} idea - Optional idea object for context
- * @returns {Object} { text: string, items: [{text, id}] | null }
+ * @returns {Object} { text: string, tree: [{text, id, children, collapsed}] | null, items: [{text, id}] | null }
  */
 function get_field_suggestion(field, idea = null) {
   const ideaTitle = idea?.title || '[this idea]';
@@ -518,7 +518,7 @@ function get_field_suggestion(field, idea = null) {
     qa_results: ['QA Results', 'Results', 'Evidence', 'Proof']
   };
 
-  // Try to get values from parent #project
+  // Try to get values from parent #project as a tree
   if (idea?.id && window.ContractParser) {
     try {
       const contractItem = window.ContractParser.getItemById(idea.id);
@@ -527,22 +527,29 @@ function get_field_suggestion(field, idea = null) {
         if (projectItem) {
           // Try each alias until we find values
           const aliases = fieldAliases[field] || [field];
+          const fieldDepth = 6; // Full depth for tree structure
           for (const label of aliases) {
-            const projectValues = window.ContractParser.getProjectFieldValuesDeep(projectItem, label);
-            if (projectValues && projectValues.length > 0) {
-              console.log(`[Integrity] Found ${field} values from project (label: ${label}):`, projectValues);
-              // projectValues is now [{text, id}, ...]
+            // Get tree structure for collapsible UI
+            const projectTree = window.ContractParser.getProjectFieldValuesTree(projectItem, label, fieldDepth);
+            if (projectTree && projectTree.length > 0) {
+              console.log(`[Integrity] Found ${field} tree from project (label: ${label}):`, projectTree.length, 'top-level items');
+
+              // Also get flat items for backward compatibility and text display
+              const flatItems = flattenTree(projectTree);
+
               if (field === 'owner') {
-                // Owner is typically single value
+                // Owner is typically single value - use flat
                 return {
-                  text: projectValues[0].text,
-                  items: [projectValues[0]]
+                  text: flatItems[0]?.text || '',
+                  tree: null,
+                  items: [flatItems[0]]
                 };
               } else {
-                // Multi-line format for all other fields
+                // Return tree structure for collapsible UI
                 return {
-                  text: projectValues.map(v => v.text).join('\n'),
-                  items: projectValues
+                  text: flatItems.map(v => v.text).join('\n'),
+                  tree: projectTree,
+                  items: flatItems  // Keep flat items for keyboard shortcuts
                 };
               }
             }
@@ -567,7 +574,28 @@ function get_field_suggestion(field, idea = null) {
   };
 
   const fallbackText = suggestions[field] || `[Provide ${field}]`;
-  return { text: fallbackText, items: null };
+  return { text: fallbackText, tree: null, items: null };
+}
+
+/**
+ * Flatten a tree structure into a flat array of items
+ * @param {Object[]} tree - Tree nodes with children
+ * @returns {Object[]} Flat array of {text, id}
+ */
+function flattenTree(tree) {
+  const flat = [];
+
+  function traverse(nodes) {
+    for (const node of nodes) {
+      flat.push({ text: node.text, id: node.id });
+      if (node.children && node.children.length > 0) {
+        traverse(node.children);
+      }
+    }
+  }
+
+  traverse(tree);
+  return flat;
 }
 
 /**
@@ -636,7 +664,8 @@ window.ContractIntegrity = {
   get_field_prompt,
 
   // Suggestions
-  get_field_suggestion
+  get_field_suggestion,
+  flattenTree
 };
 
 console.log('[Contract Integrity] Loaded');

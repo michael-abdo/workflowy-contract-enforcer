@@ -135,12 +135,22 @@ function extractTags(nameHtml) {
  * @returns {Object|null} Child item or null
  */
 function findChildByLabel(item, label) {
-  if (!item || !item.data || !item.data.ch) return null;
+  if (!item) return null;
 
-  for (const childData of item.data.ch) {
+  // Use getChildren() for fresh data, fall back to data.ch
+  const children = item.getChildren ? item.getChildren() : [];
+
+  // Also check data.ch as fallback
+  const childDataList = children.length > 0
+    ? children.map(c => ({ nm: c.getName ? c.getName() : c.data?.nm, id: c.getId ? c.getId() : c.data?.id, item: c }))
+    : (item.data?.ch || []);
+
+  for (const childData of childDataList) {
     const childName = stripHtml(childData.nm || '');
     // Check if the child name starts with the label (case-sensitive)
     if (childName.trim() === label || childName.trim().startsWith(label + ':')) {
+      // Return the item directly if available, otherwise fetch by ID
+      if (childData.item) return childData.item;
       return WF.getItemById(childData.id);
     }
   }
@@ -770,10 +780,10 @@ function getProjectFieldValues(projectItem, fieldLabel) {
  *
  * @param {Object} projectItem - Workflowy project item (#project node)
  * @param {string} fieldLabel - Label to search for (e.g., 'System Reference')
- * @param {number} maxDepth - Maximum recursion depth (default 3)
+ * @param {number} maxDepth - Maximum recursion depth (default 6)
  * @returns {Object[]|null} Array of {text, id} objects, or null if field not found
  */
-function getProjectFieldValuesDeep(projectItem, fieldLabel, maxDepth = 3) {
+function getProjectFieldValuesDeep(projectItem, fieldLabel, maxDepth = 6) {
   if (!projectItem) return null;
 
   // Find the field child under project
@@ -782,14 +792,15 @@ function getProjectFieldValuesDeep(projectItem, fieldLabel, maxDepth = 3) {
 
   const values = [];
 
-  // Recursive helper to collect leaf nodes
+  // Recursive helper to collect leaf nodes (or nodes at maxDepth)
   function collectLeaves(item, depth) {
     if (depth > maxDepth) return;
 
     const children = item.getChildren ? item.getChildren() : [];
 
-    if (children.length === 0) {
-      // Leaf node - collect its name and ID
+    // Collect if: leaf node OR we're at maxDepth (don't go deeper)
+    if (children.length === 0 || depth === maxDepth) {
+      // Leaf node or max depth reached - collect its name and ID
       const name = item.getName ? item.getName() : (item.data?.nm || '');
       const cleanName = stripHtml(name).trim();
       const id = item.getId ? item.getId() : (item.data?.id || null);
@@ -797,7 +808,7 @@ function getProjectFieldValuesDeep(projectItem, fieldLabel, maxDepth = 3) {
         values.push({ text: cleanName, id: id });
       }
     } else {
-      // Has children - recurse into each
+      // Has children and not at max depth - recurse into each
       for (const child of children) {
         collectLeaves(child, depth + 1);
       }
@@ -811,6 +822,66 @@ function getProjectFieldValuesDeep(projectItem, fieldLabel, maxDepth = 3) {
   }
 
   return values.length > 0 ? values : null;
+}
+
+/**
+ * Get field values from a project node as a TREE structure (preserves hierarchy)
+ * Returns nested structure for collapsible UI display
+ *
+ * @param {Object} projectItem - Workflowy project item (#project node)
+ * @param {string} fieldLabel - Label to search for (e.g., 'QA Document')
+ * @param {number} maxDepth - Maximum recursion depth (default 6)
+ * @returns {Object[]|null} Array of tree nodes: {text, id, children: [], collapsed: true}
+ */
+function getProjectFieldValuesTree(projectItem, fieldLabel, maxDepth = 6) {
+  if (!projectItem) return null;
+
+  // Find the field child under project
+  const fieldChild = findChildByLabel(projectItem, fieldLabel);
+  if (!fieldChild) return null;
+
+  // Recursive helper to build tree
+  function buildTree(item, depth) {
+    if (depth > maxDepth) return null;
+
+    const name = item.getName ? item.getName() : (item.data?.nm || '');
+    const cleanName = stripHtml(name).trim();
+    const id = item.getId ? item.getId() : (item.data?.id || null);
+
+    if (!cleanName || !id) return null;
+
+    const children = item.getChildren ? item.getChildren() : [];
+    const childNodes = [];
+
+    if (children.length > 0 && depth < maxDepth) {
+      for (const child of children) {
+        const childNode = buildTree(child, depth + 1);
+        if (childNode) {
+          childNodes.push(childNode);
+        }
+      }
+    }
+
+    return {
+      text: cleanName,
+      id: id,
+      children: childNodes,
+      collapsed: true  // Start collapsed by default
+    };
+  }
+
+  // Build tree from field's children
+  const topChildren = fieldChild.getChildren ? fieldChild.getChildren() : [];
+  const tree = [];
+
+  for (const child of topChildren) {
+    const node = buildTree(child, 1);
+    if (node) {
+      tree.push(node);
+    }
+  }
+
+  return tree.length > 0 ? tree : null;
 }
 
 // Export for use in other modules
@@ -830,6 +901,7 @@ window.ContractParser = {
   findFieldChild,
   getProjectFieldValues,
   getProjectFieldValuesDeep,
+  getProjectFieldValuesTree,
   extractFieldContent,
   detectInheritancePointer,
   parseContractFields,

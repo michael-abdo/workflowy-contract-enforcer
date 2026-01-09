@@ -367,6 +367,102 @@ function injectStyles() {
       background: rgba(255, 255, 255, 0.3);
       font-weight: 600;
     }
+
+    /* Tree structure styles */
+    .contract-suggestion-tree {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    .contract-suggestion-tree-node {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .contract-suggestion-tree-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .contract-suggestion-tree-row:hover {
+      background: rgba(0, 0, 0, 0.2);
+    }
+
+    .contract-suggestion-tree-row.selected {
+      background: rgba(255, 255, 255, 0.15);
+    }
+
+    .contract-suggestion-tree-toggle {
+      width: 16px;
+      height: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.7);
+      flex-shrink: 0;
+      user-select: none;
+    }
+
+    .contract-suggestion-tree-toggle.has-children {
+      cursor: pointer;
+    }
+
+    .contract-suggestion-tree-toggle.has-children:hover {
+      color: white;
+    }
+
+    .contract-suggestion-tree-checkbox {
+      width: 14px;
+      height: 14px;
+      cursor: pointer;
+      accent-color: white;
+      flex-shrink: 0;
+    }
+
+    .contract-suggestion-tree-key {
+      background: rgba(255, 255, 255, 0.25);
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-size: 9px;
+      font-family: monospace;
+      font-weight: 600;
+      white-space: nowrap;
+      flex-shrink: 0;
+      min-width: 32px;
+      text-align: center;
+    }
+
+    .contract-suggestion-tree-text {
+      font-size: 12px;
+      line-height: 1.3;
+      opacity: 0.95;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+    }
+
+    .contract-suggestion-tree-children {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      margin-left: 20px;
+      border-left: 1px solid rgba(255, 255, 255, 0.15);
+      padding-left: 8px;
+    }
+
+    .contract-suggestion-tree-children.collapsed {
+      display: none;
+    }
   `;
 
   document.head.appendChild(styles);
@@ -426,8 +522,11 @@ let currentSuggestion = {
   idea: null,
   field: null,
   text: null,
-  items: [],  // Array of individual items for numbered selection
-  selectedIndices: new Set()  // Set of selected item indices (0-based)
+  items: [],  // Array of individual items for numbered selection (flat)
+  tree: null,  // Tree structure for collapsible UI
+  selectedIds: new Set(),  // Set of selected item IDs (for tree mode)
+  selectedIndices: new Set(),  // Set of selected item indices (for flat mode, 0-based)
+  visibleItems: []  // Array of currently visible items in DOM order [{id, text, node}]
 };
 
 /**
@@ -487,32 +586,245 @@ function updateSelectionUI() {
 }
 
 /**
+ * Toggle selection of a tree item by ID
+ * @param {string} id - Item ID
+ */
+function toggleTreeItemSelection(id) {
+  if (currentSuggestion.selectedIds.has(id)) {
+    currentSuggestion.selectedIds.delete(id);
+  } else {
+    currentSuggestion.selectedIds.add(id);
+  }
+  updateTreeSelectionUI();
+}
+
+/**
+ * Update tree selection UI (checkboxes and button count)
+ */
+function updateTreeSelectionUI() {
+  const container = document.getElementById(SUGGESTION_CONTAINER_ID);
+  if (!container) return;
+
+  // Update checkboxes
+  const rows = container.querySelectorAll('.contract-suggestion-tree-row[data-id]');
+  rows.forEach(row => {
+    const id = row.dataset.id;
+    const checkbox = row.querySelector('.contract-suggestion-tree-checkbox');
+    if (currentSuggestion.selectedIds.has(id)) {
+      row.classList.add('selected');
+      if (checkbox) checkbox.checked = true;
+    } else {
+      row.classList.remove('selected');
+      if (checkbox) checkbox.checked = false;
+    }
+  });
+
+  // Update Insert Selected button
+  const insertBtn = container.querySelector('.contract-suggestion-btn-insert');
+  if (insertBtn) {
+    const count = currentSuggestion.selectedIds.size;
+    insertBtn.textContent = count > 0 ? `Insert Selected (${count})` : 'Insert Selected';
+    insertBtn.disabled = count === 0;
+  }
+}
+
+/**
+ * Toggle expand/collapse of a tree node
+ * @param {string} id - Node ID
+ */
+function toggleTreeNode(id) {
+  const container = document.getElementById(SUGGESTION_CONTAINER_ID);
+  if (!container) return;
+
+  const node = container.querySelector(`.contract-suggestion-tree-node[data-id="${id}"]`);
+  if (!node) return;
+
+  const children = node.querySelector('.contract-suggestion-tree-children');
+  const toggle = node.querySelector('.contract-suggestion-tree-toggle');
+
+  if (children) {
+    const isCollapsed = children.classList.contains('collapsed');
+    if (isCollapsed) {
+      children.classList.remove('collapsed');
+      if (toggle) toggle.textContent = '▼';
+    } else {
+      children.classList.add('collapsed');
+      if (toggle) toggle.textContent = '▶';
+    }
+
+    // Renumber visible items after expand/collapse
+    renumberVisibleItems();
+  }
+}
+
+/**
+ * Renumber all visible items in the tree with dynamic Ctrl+N shortcuts
+ */
+function renumberVisibleItems() {
+  const container = document.getElementById(SUGGESTION_CONTAINER_ID);
+  if (!container) return;
+
+  currentSuggestion.visibleItems = [];
+  let num = 1;
+
+  // Find all visible rows (not inside collapsed containers)
+  const allRows = container.querySelectorAll('.contract-suggestion-tree-row[data-id]');
+
+  allRows.forEach(row => {
+    // Check if this row is visible (not inside a collapsed parent)
+    let isVisible = true;
+    let parent = row.parentElement;
+
+    while (parent && parent.id !== SUGGESTION_CONTAINER_ID) {
+      if (parent.classList.contains('collapsed')) {
+        isVisible = false;
+        break;
+      }
+      parent = parent.parentElement;
+    }
+
+    const keyEl = row.querySelector('.contract-suggestion-tree-key');
+    if (isVisible) {
+      if (keyEl) keyEl.textContent = `Ctrl+${num}`;
+      currentSuggestion.visibleItems.push({
+        id: row.dataset.id,
+        text: row.dataset.text,
+        num: num
+      });
+      num++;
+    } else {
+      if (keyEl) keyEl.textContent = '';
+    }
+  });
+
+  // Update "Insert All" button with next number
+  const allBtn = container.querySelector('.contract-suggestion-btn-all');
+  if (allBtn) {
+    allBtn.textContent = `Insert All (Ctrl+${num})`;
+  }
+
+  console.log('[UI] Renumbered', currentSuggestion.visibleItems.length, 'visible items');
+}
+
+/**
+ * Render a tree node recursively
+ * @param {Object} node - Tree node {text, id, children, collapsed}
+ * @param {number} depth - Current depth
+ * @returns {HTMLElement} Node element
+ */
+function renderTreeNode(node, depth = 0) {
+  const nodeEl = document.createElement('div');
+  nodeEl.className = 'contract-suggestion-tree-node';
+  nodeEl.dataset.id = node.id;
+
+  const hasChildren = node.children && node.children.length > 0;
+  const isCollapsed = node.collapsed !== false; // Default to collapsed
+
+  // Row element
+  const rowEl = document.createElement('div');
+  rowEl.className = 'contract-suggestion-tree-row';
+  rowEl.dataset.id = node.id;
+  rowEl.dataset.text = node.text;
+
+  // Toggle arrow
+  const toggleEl = document.createElement('span');
+  toggleEl.className = 'contract-suggestion-tree-toggle' + (hasChildren ? ' has-children' : '');
+  toggleEl.textContent = hasChildren ? (isCollapsed ? '▶' : '▼') : '·';
+  if (hasChildren) {
+    toggleEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleTreeNode(node.id);
+    });
+  }
+  rowEl.appendChild(toggleEl);
+
+  // Checkbox
+  const checkboxEl = document.createElement('input');
+  checkboxEl.type = 'checkbox';
+  checkboxEl.className = 'contract-suggestion-tree-checkbox';
+  checkboxEl.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleTreeItemSelection(node.id);
+  });
+  rowEl.appendChild(checkboxEl);
+
+  // Keyboard shortcut key (will be filled by renumberVisibleItems)
+  const keyEl = document.createElement('span');
+  keyEl.className = 'contract-suggestion-tree-key';
+  keyEl.textContent = ''; // Will be set by renumberVisibleItems
+  rowEl.appendChild(keyEl);
+
+  // Text
+  const textEl = document.createElement('span');
+  textEl.className = 'contract-suggestion-tree-text';
+  textEl.textContent = node.text;
+  textEl.title = node.text; // Show full text on hover
+  rowEl.appendChild(textEl);
+
+  // Click on row to toggle selection
+  rowEl.addEventListener('click', () => {
+    toggleTreeItemSelection(node.id);
+  });
+
+  nodeEl.appendChild(rowEl);
+
+  // Children container
+  if (hasChildren) {
+    const childrenEl = document.createElement('div');
+    childrenEl.className = 'contract-suggestion-tree-children' + (isCollapsed ? ' collapsed' : '');
+
+    for (const child of node.children) {
+      childrenEl.appendChild(renderTreeNode(child, depth + 1));
+    }
+
+    nodeEl.appendChild(childrenEl);
+  }
+
+  return nodeEl;
+}
+
+/**
+ * Render the full suggestion tree
+ * @param {Object[]} tree - Array of tree nodes
+ * @returns {HTMLElement} Tree container element
+ */
+function renderSuggestionTree(tree) {
+  const treeEl = document.createElement('div');
+  treeEl.className = 'contract-suggestion-tree';
+
+  for (const node of tree) {
+    treeEl.appendChild(renderTreeNode(node));
+  }
+
+  return treeEl;
+}
+
+/**
  * Show a combined prompt + suggestion overlay for a field
  * Displays numbered items with Ctrl+1, Ctrl+2, etc. shortcuts
  * Supports click-to-select and multi-select with checkboxes
+ * Supports tree structure with collapsible nodes
  * @param {Object} idea - Current idea object
  * @param {string} field - Field name (e.g., 'intent')
- * @param {Object|string} suggestion - Suggestion object {text, items} or legacy string
+ * @param {Object|string} suggestion - Suggestion object {text, tree, items} or legacy string
  */
 function showSuggestion(idea, field, suggestion) {
   injectStyles();
   const container = getSuggestionContainer();
 
   // Handle both new object format and legacy string format
-  let suggestionText, items;
+  let suggestionText, items, tree;
   if (typeof suggestion === 'object' && suggestion !== null) {
     suggestionText = suggestion.text;
+    tree = suggestion.tree || null;
     // Items from project have {text, id}, fallback templates have null
     items = suggestion.items || parseSuggestionItems(suggestion.text).map(text => ({ text, id: null }));
   } else {
     // Legacy string format
     suggestionText = suggestion;
+    tree = null;
     items = parseSuggestionItems(suggestion).map(text => ({ text, id: null }));
   }
-
-  // Store current state for acceptance (reset selection)
-  // items is now [{text, id}, ...] where id may be null for templates
-  currentSuggestion = { idea, field, text: suggestionText, items, selectedIndices: new Set() };
 
   // Hide the separate prompt since we're combining them
   hideNextField();
@@ -526,83 +838,149 @@ function showSuggestion(idea, field, suggestion) {
   const suggestionEl = document.createElement('div');
   suggestionEl.className = 'contract-suggestion';
 
-  // Build numbered items HTML with checkboxes
-  let itemsHtml = '';
-  items.forEach((item, index) => {
-    const num = index + 1;
-    const displayText = typeof item === 'object' ? item.text : item;
-    itemsHtml += `
-      <div class="contract-suggestion-item" data-index="${index}">
-        <input type="checkbox" class="contract-suggestion-checkbox" />
-        <span class="contract-suggestion-key">Ctrl+${num}</span>
-        <span class="contract-suggestion-value">${escapeHtml(displayText)}</span>
-      </div>
-    `;
-  });
+  // Check if we have tree structure - use tree rendering
+  if (tree && tree.length > 0) {
+    // Store current state for acceptance with tree mode (use selectedIds for tree)
+    currentSuggestion = {
+      idea,
+      field,
+      text: suggestionText,
+      items,
+      tree,
+      selectedIds: new Set(),
+      selectedIndices: new Set(), // For backward compat
+      visibleItems: []
+    };
 
-  // Add actions row with Insert All and Insert Selected
-  const actionsHtml = items.length > 0 ? `
-    <div class="contract-suggestion-actions">
+    // Build tree UI
+    const treeEl = renderSuggestionTree(tree);
+
+    // Actions row - "Insert All" number will be updated by renumberVisibleItems
+    const actionsEl = document.createElement('div');
+    actionsEl.className = 'contract-suggestion-actions';
+    actionsEl.innerHTML = `
       <button class="contract-suggestion-btn contract-suggestion-btn-insert" disabled>Insert Selected</button>
-      <button class="contract-suggestion-btn contract-suggestion-btn-primary contract-suggestion-btn-all">Insert All (Ctrl+${items.length + 1})</button>
-    </div>
-  ` : '';
+      <button class="contract-suggestion-btn contract-suggestion-btn-primary contract-suggestion-btn-all">Insert All</button>
+    `;
 
-  suggestionEl.innerHTML = `
-    <div class="contract-suggestion-header">
-      <div class="contract-suggestion-field">${formatFieldName(field)}</div>
-    </div>
-    <div class="contract-suggestion-question">${escapeHtml(prompt)}</div>
-    <div class="contract-suggestion-items">${itemsHtml}</div>
-    ${actionsHtml}
-  `;
+    suggestionEl.innerHTML = `
+      <div class="contract-suggestion-header">
+        <div class="contract-suggestion-field">${formatFieldName(field)}</div>
+      </div>
+      <div class="contract-suggestion-question">${escapeHtml(prompt)}</div>
+    `;
+    suggestionEl.appendChild(treeEl);
+    suggestionEl.appendChild(actionsEl);
 
-  container.appendChild(suggestionEl);
+    container.appendChild(suggestionEl);
 
-  // Attach click handlers to items
-  const itemEls = suggestionEl.querySelectorAll('.contract-suggestion-item[data-index]');
-  itemEls.forEach(itemEl => {
-    itemEl.addEventListener('click', (e) => {
-      // Prevent double-toggle if clicking directly on checkbox
-      if (e.target.classList.contains('contract-suggestion-checkbox')) {
-        e.stopPropagation();
-      }
-      const index = parseInt(itemEl.dataset.index, 10);
-      toggleItemSelection(index);
+    // Renumber visible items (all top-level initially visible)
+    renumberVisibleItems();
+
+    // Attach click handler to Insert Selected button
+    const insertBtn = suggestionEl.querySelector('.contract-suggestion-btn-insert');
+    if (insertBtn) {
+      insertBtn.addEventListener('click', () => {
+        if (window.ContractSuggestions?.acceptSelectedTreeItems) {
+          window.ContractSuggestions.acceptSelectedTreeItems();
+        }
+      });
+    }
+
+    // Attach click handler to Insert All button
+    const allBtn = suggestionEl.querySelector('.contract-suggestion-btn-all');
+    if (allBtn) {
+      allBtn.addEventListener('click', () => {
+        if (window.ContractSuggestions?.acceptSuggestion) {
+          window.ContractSuggestions.acceptSuggestion(null);
+        }
+      });
+    }
+
+    console.log('[UI] Showing tree suggestion with', tree.length, 'root nodes for', field);
+  } else {
+    // Flat items mode (legacy)
+    // Store current state for acceptance (reset selection)
+    currentSuggestion = { idea, field, text: suggestionText, items, selectedIndices: new Set() };
+
+    // Build numbered items HTML with checkboxes
+    let itemsHtml = '';
+    items.forEach((item, index) => {
+      const num = index + 1;
+      const displayText = typeof item === 'object' ? item.text : item;
+      itemsHtml += `
+        <div class="contract-suggestion-item" data-index="${index}">
+          <input type="checkbox" class="contract-suggestion-checkbox" />
+          <span class="contract-suggestion-key">Ctrl+${num}</span>
+          <span class="contract-suggestion-value">${escapeHtml(displayText)}</span>
+        </div>
+      `;
     });
 
-    // Handle checkbox direct clicks
-    const checkbox = itemEl.querySelector('.contract-suggestion-checkbox');
-    if (checkbox) {
-      checkbox.addEventListener('click', (e) => {
-        e.stopPropagation();
+    // Add actions row with Insert All and Insert Selected
+    const actionsHtml = items.length > 0 ? `
+      <div class="contract-suggestion-actions">
+        <button class="contract-suggestion-btn contract-suggestion-btn-insert" disabled>Insert Selected</button>
+        <button class="contract-suggestion-btn contract-suggestion-btn-primary contract-suggestion-btn-all">Insert All (Ctrl+${items.length + 1})</button>
+      </div>
+    ` : '';
+
+    suggestionEl.innerHTML = `
+      <div class="contract-suggestion-header">
+        <div class="contract-suggestion-field">${formatFieldName(field)}</div>
+      </div>
+      <div class="contract-suggestion-question">${escapeHtml(prompt)}</div>
+      <div class="contract-suggestion-items">${itemsHtml}</div>
+      ${actionsHtml}
+    `;
+
+    container.appendChild(suggestionEl);
+
+    // Attach click handlers to items
+    const itemEls = suggestionEl.querySelectorAll('.contract-suggestion-item[data-index]');
+    itemEls.forEach(itemEl => {
+      itemEl.addEventListener('click', (e) => {
+        // Prevent double-toggle if clicking directly on checkbox
+        if (e.target.classList.contains('contract-suggestion-checkbox')) {
+          e.stopPropagation();
+        }
         const index = parseInt(itemEl.dataset.index, 10);
         toggleItemSelection(index);
       });
+
+      // Handle checkbox direct clicks
+      const checkbox = itemEl.querySelector('.contract-suggestion-checkbox');
+      if (checkbox) {
+        checkbox.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const index = parseInt(itemEl.dataset.index, 10);
+          toggleItemSelection(index);
+        });
+      }
+    });
+
+    // Attach click handler to Insert Selected button
+    const insertBtn = suggestionEl.querySelector('.contract-suggestion-btn-insert');
+    if (insertBtn) {
+      insertBtn.addEventListener('click', () => {
+        if (window.ContractSuggestions?.acceptSelectedItems) {
+          window.ContractSuggestions.acceptSelectedItems();
+        }
+      });
     }
-  });
 
-  // Attach click handler to Insert Selected button
-  const insertBtn = suggestionEl.querySelector('.contract-suggestion-btn-insert');
-  if (insertBtn) {
-    insertBtn.addEventListener('click', () => {
-      if (window.ContractSuggestions?.acceptSelectedItems) {
-        window.ContractSuggestions.acceptSelectedItems();
-      }
-    });
+    // Attach click handler to Insert All button
+    const allBtn = suggestionEl.querySelector('.contract-suggestion-btn-all');
+    if (allBtn) {
+      allBtn.addEventListener('click', () => {
+        if (window.ContractSuggestions?.acceptSuggestion) {
+          window.ContractSuggestions.acceptSuggestion(null);
+        }
+      });
+    }
+
+    console.log('[UI] Showing', items.length, 'flat suggestion items for', field);
   }
-
-  // Attach click handler to Insert All button
-  const allBtn = suggestionEl.querySelector('.contract-suggestion-btn-all');
-  if (allBtn) {
-    allBtn.addEventListener('click', () => {
-      if (window.ContractSuggestions?.acceptSuggestion) {
-        window.ContractSuggestions.acceptSuggestion(null);
-      }
-    });
-  }
-
-  console.log('[UI] Showing', items.length, 'suggestion items for', field);
 }
 
 /**
@@ -619,7 +997,7 @@ function hideSuggestion() {
       }, 200);
     }
   }
-  currentSuggestion = { idea: null, field: null, text: null, items: [], selectedIndices: new Set() };
+  currentSuggestion = { idea: null, field: null, text: null, items: [], tree: null, selectedIndices: new Set(), selectedIds: new Set(), visibleItems: [] };
 }
 
 /**

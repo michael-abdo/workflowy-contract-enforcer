@@ -296,7 +296,7 @@ function acceptSuggestion(itemIndex = null) {
 /**
  * Initialize keyboard listener for suggestion acceptance
  * Listens for Ctrl+1 through Ctrl+9 for numbered item selection
- * Ctrl+N (where N = items.length + 1) inserts all items
+ * Supports both flat mode (static numbers) and tree mode (dynamic visible items)
  */
 function initKeyboardListener() {
   document.addEventListener('keydown', (event) => {
@@ -322,19 +322,40 @@ function initKeyboardListener() {
     event.preventDefault();
     event.stopPropagation();
 
-    const items = suggestion.items || [];
-    const allItemsNum = items.length + 1;
+    // Check if we're in tree mode (has visibleItems array)
+    const visibleItems = suggestion.visibleItems;
+    if (visibleItems && visibleItems.length > 0) {
+      // Tree mode - use dynamic numbering from visible items
+      const allItemsNum = visibleItems.length + 1;
 
-    if (keyNum === allItemsNum) {
-      // Insert all items
-      console.log('[Suggestions] Keyboard shortcut triggered (Ctrl+' + keyNum + ') - Insert All');
-      acceptSuggestion(null);
-    } else if (keyNum <= items.length) {
-      // Insert specific item
-      console.log('[Suggestions] Keyboard shortcut triggered (Ctrl+' + keyNum + ')');
-      acceptSuggestion(keyNum);
+      if (keyNum === allItemsNum) {
+        // Insert all items (from full tree, not just visible)
+        console.log('[Suggestions] Tree mode: Ctrl+' + keyNum + ' - Insert All');
+        acceptSuggestion(null);
+      } else if (keyNum <= visibleItems.length) {
+        // Insert specific visible item by its ID
+        const item = visibleItems[keyNum - 1];
+        console.log('[Suggestions] Tree mode: Ctrl+' + keyNum + ' - Insert item:', item.text);
+        acceptTreeItem(item.id);
+      } else {
+        console.log('[Suggestions] Invalid item number:', keyNum, '(only', visibleItems.length, 'visible items)');
+      }
     } else {
-      console.log('[Suggestions] Invalid item number:', keyNum, '(only', items.length, 'items available)');
+      // Flat mode - use static index numbering
+      const items = suggestion.items || [];
+      const allItemsNum = items.length + 1;
+
+      if (keyNum === allItemsNum) {
+        // Insert all items
+        console.log('[Suggestions] Flat mode: Ctrl+' + keyNum + ' - Insert All');
+        acceptSuggestion(null);
+      } else if (keyNum <= items.length) {
+        // Insert specific item by index (1-based)
+        console.log('[Suggestions] Flat mode: Ctrl+' + keyNum);
+        acceptSuggestion(keyNum);
+      } else {
+        console.log('[Suggestions] Invalid item number:', keyNum, '(only', items.length, 'items available)');
+      }
     }
   }, true); // Use capture phase to get event before Workflowy
 
@@ -397,12 +418,133 @@ function acceptSelectedItems() {
   }
 }
 
+/**
+ * Accept a single tree item by ID (used by keyboard shortcuts in tree mode)
+ * @param {string} id - Item ID to insert
+ * @returns {boolean} True if successful
+ */
+function acceptTreeItem(id) {
+  const UI = window.ContractUI;
+  if (!UI) {
+    console.warn('[Suggestions] ContractUI not available');
+    return false;
+  }
+
+  const suggestion = UI.getCurrentSuggestion();
+  if (!suggestion || !suggestion.idea || !suggestion.field) {
+    console.log('[Suggestions] No active suggestion to accept');
+    return false;
+  }
+
+  // Find item in tree by ID
+  function findInTree(nodes, targetId) {
+    for (const node of nodes) {
+      if (node.id === targetId) return node;
+      if (node.children && node.children.length > 0) {
+        const found = findInTree(node.children, targetId);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+
+  const tree = suggestion.tree || [];
+  const item = findInTree(tree, id);
+
+  if (!item) {
+    console.warn('[Suggestions] Tree item not found:', id);
+    return false;
+  }
+
+  console.log('[Suggestions] Accepting tree item:', item.text, 'id:', item.id);
+
+  // Create single item array with text and id for mirror creation
+  const itemToInsert = [{ text: item.text, id: item.id }];
+  const success = createOrUpdateField(suggestion.idea, suggestion.field, itemToInsert);
+
+  if (success) {
+    UI.hideSuggestion();
+    UI.showSuccess('Suggestion Accepted', `${suggestion.field}: 1 item inserted`);
+    return true;
+  } else {
+    UI.showError('Failed to Accept', 'Could not insert item');
+    return false;
+  }
+}
+
+/**
+ * Accept the currently selected tree items (multi-select in tree mode)
+ * Inserts all items that have been checked via click/checkbox
+ * @returns {boolean} True if successful
+ */
+function acceptSelectedTreeItems() {
+  const UI = window.ContractUI;
+  if (!UI) {
+    console.warn('[Suggestions] ContractUI not available');
+    return false;
+  }
+
+  const suggestion = UI.getCurrentSuggestion();
+  if (!suggestion || !suggestion.idea || !suggestion.field) {
+    console.log('[Suggestions] No active suggestion to accept');
+    return false;
+  }
+
+  const selectedIds = suggestion.selectedIds;
+  if (!selectedIds || selectedIds.size === 0) {
+    console.log('[Suggestions] No tree items selected');
+    return false;
+  }
+
+  // Find all selected items in tree by ID
+  function findInTree(nodes, targetId) {
+    for (const node of nodes) {
+      if (node.id === targetId) return node;
+      if (node.children && node.children.length > 0) {
+        const found = findInTree(node.children, targetId);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+
+  const tree = suggestion.tree || [];
+  const selectedItems = [];
+
+  for (const id of selectedIds) {
+    const item = findInTree(tree, id);
+    if (item) {
+      selectedItems.push({ text: item.text, id: item.id });
+    }
+  }
+
+  if (selectedItems.length === 0) {
+    console.warn('[Suggestions] No valid tree items to insert');
+    return false;
+  }
+
+  console.log('[Suggestions] Accepting', selectedItems.length, 'selected tree items for', suggestion.field);
+
+  const success = createOrUpdateField(suggestion.idea, suggestion.field, selectedItems);
+
+  if (success) {
+    UI.hideSuggestion();
+    UI.showSuccess('Suggestion Accepted', `${suggestion.field}: ${selectedItems.length} items inserted`);
+    return true;
+  } else {
+    UI.showError('Failed to Accept', 'Could not insert selected items');
+    return false;
+  }
+}
+
 // Export for use in other modules
 window.ContractSuggestions = {
   findFieldNode,
   createOrUpdateField,
   acceptSuggestion,
   acceptSelectedItems,
+  acceptTreeItem,
+  acceptSelectedTreeItems,
   initKeyboardListener
 };
 

@@ -463,6 +463,78 @@ function injectStyles() {
     .contract-suggestion-tree-children.collapsed {
       display: none;
     }
+
+    /* Search input styles */
+    .contract-suggestion-search {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      padding: 6px 10px;
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 6px;
+    }
+
+    .contract-suggestion-search-icon {
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+
+    .contract-suggestion-search-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: white;
+      font-size: 12px;
+      font-family: inherit;
+    }
+
+    .contract-suggestion-search-input::placeholder {
+      color: rgba(255, 255, 255, 0.4);
+    }
+
+    .contract-suggestion-search-count {
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.5);
+      white-space: nowrap;
+    }
+
+    .contract-suggestion-search-clear {
+      background: none;
+      border: none;
+      color: rgba(255, 255, 255, 0.5);
+      cursor: pointer;
+      padding: 2px;
+      font-size: 12px;
+      line-height: 1;
+    }
+
+    .contract-suggestion-search-clear:hover {
+      color: white;
+    }
+
+    /* Search highlight styles */
+    .contract-suggestion-tree-text mark {
+      background: rgba(255, 220, 0, 0.5);
+      color: white;
+      padding: 0 2px;
+      border-radius: 2px;
+    }
+
+    .contract-suggestion-tree-row.search-match {
+      background: rgba(255, 220, 0, 0.15);
+    }
+
+    .contract-suggestion-tree-row.search-match:hover {
+      background: rgba(255, 220, 0, 0.25);
+    }
+
+    /* Hidden rows when filtering */
+    .contract-suggestion-tree-node.search-hidden {
+      display: none;
+    }
   `;
 
   document.head.appendChild(styles);
@@ -671,16 +743,22 @@ function renumberVisibleItems() {
   const allRows = container.querySelectorAll('.contract-suggestion-tree-row[data-id]');
 
   allRows.forEach(row => {
-    // Check if this row is visible (not inside a collapsed parent)
+    // Check if this row is visible (not inside a collapsed parent or search-hidden)
     let isVisible = true;
     let parent = row.parentElement;
 
     while (parent && parent.id !== SUGGESTION_CONTAINER_ID) {
-      if (parent.classList.contains('collapsed')) {
+      if (parent.classList.contains('collapsed') || parent.classList.contains('search-hidden')) {
         isVisible = false;
         break;
       }
       parent = parent.parentElement;
+    }
+
+    // Also check if the row's own node is search-hidden
+    const nodeEl = row.closest('.contract-suggestion-tree-node');
+    if (nodeEl && nodeEl.classList.contains('search-hidden')) {
+      isVisible = false;
     }
 
     const keyEl = row.querySelector('.contract-suggestion-tree-key');
@@ -704,6 +782,189 @@ function renumberVisibleItems() {
   }
 
   console.log('[UI] Renumbered', currentSuggestion.visibleItems.length, 'visible items');
+}
+
+/**
+ * Search the tree and expand/highlight matching nodes
+ * @param {string} query - Search query
+ */
+function searchTree(query) {
+  const container = document.getElementById(SUGGESTION_CONTAINER_ID);
+  if (!container) return;
+
+  const tree = currentSuggestion.tree;
+  if (!tree) return;
+
+  const normalizedQuery = query.toLowerCase().trim();
+
+  // Clear previous search state
+  clearSearchHighlights();
+
+  if (!normalizedQuery) {
+    // Empty search - show all, collapse all
+    collapseAllNodes();
+    renumberVisibleItems();
+    updateSearchCount(0, 0);
+    return;
+  }
+
+  // Find all matching node IDs and their ancestors
+  const matchIds = new Set();
+  const ancestorIds = new Set();
+
+  function findMatches(nodes, ancestors = []) {
+    for (const node of nodes) {
+      const text = node.text.toLowerCase();
+      const isMatch = text.includes(normalizedQuery);
+
+      if (isMatch) {
+        matchIds.add(node.id);
+        // Mark all ancestors to be expanded
+        ancestors.forEach(id => ancestorIds.add(id));
+      }
+
+      if (node.children && node.children.length > 0) {
+        findMatches(node.children, [...ancestors, node.id]);
+      }
+    }
+  }
+
+  findMatches(tree);
+
+  // Expand ancestor nodes and highlight matches
+  const allNodes = container.querySelectorAll('.contract-suggestion-tree-node[data-id]');
+
+  allNodes.forEach(nodeEl => {
+    const id = nodeEl.dataset.id;
+    const row = nodeEl.querySelector('.contract-suggestion-tree-row');
+    const childrenEl = nodeEl.querySelector('.contract-suggestion-tree-children');
+    const toggleEl = nodeEl.querySelector('.contract-suggestion-tree-toggle');
+
+    if (matchIds.has(id)) {
+      // This is a match - highlight it
+      row.classList.add('search-match');
+      highlightText(row, normalizedQuery);
+      nodeEl.classList.remove('search-hidden');
+    } else if (ancestorIds.has(id)) {
+      // This is an ancestor of a match - expand it
+      nodeEl.classList.remove('search-hidden');
+      if (childrenEl) {
+        childrenEl.classList.remove('collapsed');
+        if (toggleEl) toggleEl.textContent = '▼';
+      }
+    } else {
+      // Not a match or ancestor - check if any descendant matches
+      const hasMatchingDescendant = hasDescendantMatch(nodeEl, matchIds);
+      if (!hasMatchingDescendant) {
+        nodeEl.classList.add('search-hidden');
+      } else {
+        nodeEl.classList.remove('search-hidden');
+      }
+    }
+  });
+
+  // Renumber visible items after search
+  renumberVisibleItems();
+  updateSearchCount(matchIds.size, allNodes.length);
+
+  console.log('[UI] Search found', matchIds.size, 'matches for:', query);
+}
+
+/**
+ * Check if a node element has any descendant that matches
+ * @param {HTMLElement} nodeEl - Node element
+ * @param {Set} matchIds - Set of matching IDs
+ * @returns {boolean}
+ */
+function hasDescendantMatch(nodeEl, matchIds) {
+  const descendantNodes = nodeEl.querySelectorAll('.contract-suggestion-tree-node[data-id]');
+  for (const desc of descendantNodes) {
+    if (matchIds.has(desc.dataset.id)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Clear all search highlights and hidden states
+ */
+function clearSearchHighlights() {
+  const container = document.getElementById(SUGGESTION_CONTAINER_ID);
+  if (!container) return;
+
+  // Remove match highlighting
+  const matchedRows = container.querySelectorAll('.search-match');
+  matchedRows.forEach(row => row.classList.remove('search-match'));
+
+  // Remove hidden state
+  const hiddenNodes = container.querySelectorAll('.search-hidden');
+  hiddenNodes.forEach(node => node.classList.remove('search-hidden'));
+
+  // Remove text highlighting - restore original text
+  const textEls = container.querySelectorAll('.contract-suggestion-tree-text');
+  textEls.forEach(el => {
+    const row = el.closest('.contract-suggestion-tree-row');
+    if (row && row.dataset.text) {
+      el.textContent = row.dataset.text;
+    }
+  });
+}
+
+/**
+ * Highlight matching text within a row
+ * @param {HTMLElement} row - Row element
+ * @param {string} query - Search query (lowercase)
+ */
+function highlightText(row, query) {
+  const textEl = row.querySelector('.contract-suggestion-tree-text');
+  if (!textEl) return;
+
+  const originalText = row.dataset.text || textEl.textContent;
+  const lowerText = originalText.toLowerCase();
+  const index = lowerText.indexOf(query);
+
+  if (index === -1) return;
+
+  // Build highlighted HTML
+  const before = escapeHtml(originalText.substring(0, index));
+  const match = escapeHtml(originalText.substring(index, index + query.length));
+  const after = escapeHtml(originalText.substring(index + query.length));
+
+  textEl.innerHTML = `${before}<mark>${match}</mark>${after}`;
+}
+
+/**
+ * Collapse all tree nodes
+ */
+function collapseAllNodes() {
+  const container = document.getElementById(SUGGESTION_CONTAINER_ID);
+  if (!container) return;
+
+  const childrenEls = container.querySelectorAll('.contract-suggestion-tree-children');
+  childrenEls.forEach(el => el.classList.add('collapsed'));
+
+  const toggleEls = container.querySelectorAll('.contract-suggestion-tree-toggle.has-children');
+  toggleEls.forEach(el => el.textContent = '▶');
+}
+
+/**
+ * Update search count display
+ * @param {number} matchCount - Number of matches
+ * @param {number} totalCount - Total number of nodes
+ */
+function updateSearchCount(matchCount, totalCount) {
+  const container = document.getElementById(SUGGESTION_CONTAINER_ID);
+  if (!container) return;
+
+  const countEl = container.querySelector('.contract-suggestion-search-count');
+  if (countEl) {
+    if (matchCount > 0) {
+      countEl.textContent = `${matchCount} found`;
+    } else {
+      countEl.textContent = '';
+    }
+  }
 }
 
 /**
@@ -863,12 +1124,23 @@ function showSuggestion(idea, field, suggestion) {
       <button class="contract-suggestion-btn contract-suggestion-btn-primary contract-suggestion-btn-all">Insert All</button>
     `;
 
+    // Create search input
+    const searchEl = document.createElement('div');
+    searchEl.className = 'contract-suggestion-search';
+    searchEl.innerHTML = `
+      <span class="contract-suggestion-search-icon">🔍</span>
+      <input type="text" class="contract-suggestion-search-input" placeholder="Search..." />
+      <span class="contract-suggestion-search-count"></span>
+      <button class="contract-suggestion-search-clear" title="Clear search">✕</button>
+    `;
+
     suggestionEl.innerHTML = `
       <div class="contract-suggestion-header">
         <div class="contract-suggestion-field">${formatFieldName(field)}</div>
       </div>
       <div class="contract-suggestion-question">${escapeHtml(prompt)}</div>
     `;
+    suggestionEl.appendChild(searchEl);
     suggestionEl.appendChild(treeEl);
     suggestionEl.appendChild(actionsEl);
 
@@ -876,6 +1148,39 @@ function showSuggestion(idea, field, suggestion) {
 
     // Renumber visible items (all top-level initially visible)
     renumberVisibleItems();
+
+    // Attach search input handler
+    const searchInput = suggestionEl.querySelector('.contract-suggestion-search-input');
+    if (searchInput) {
+      let searchTimeout = null;
+      searchInput.addEventListener('input', (e) => {
+        // Debounce search for performance
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => {
+          searchTree(e.target.value);
+        }, 150);
+      });
+
+      // Focus search on Ctrl+F when suggestion is visible
+      searchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          searchInput.value = '';
+          searchTree('');
+          searchInput.blur();
+        }
+      });
+    }
+
+    // Attach clear button handler
+    const clearBtn = suggestionEl.querySelector('.contract-suggestion-search-clear');
+    if (clearBtn) {
+      clearBtn.addEventListener('click', () => {
+        if (searchInput) {
+          searchInput.value = '';
+          searchTree('');
+        }
+      });
+    }
 
     // Attach click handler to Insert Selected button
     const insertBtn = suggestionEl.querySelector('.contract-suggestion-btn-insert');

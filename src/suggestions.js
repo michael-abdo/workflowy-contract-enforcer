@@ -296,18 +296,13 @@ function acceptSuggestion(itemIndex = null) {
 /**
  * Initialize keyboard listener for suggestion acceptance
  * Listens for Ctrl+1 through Ctrl+9 for numbered item selection
+ * Listens for Ctrl+F to focus search input in tree mode
  * Supports both flat mode (static numbers) and tree mode (dynamic visible items)
  */
 function initKeyboardListener() {
   document.addEventListener('keydown', (event) => {
-    // Only handle Ctrl + number keys (1-9)
+    // Only handle Ctrl + keys
     if (!event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) {
-      return;
-    }
-
-    // Check for number keys 1-9
-    const keyNum = parseInt(event.key, 10);
-    if (isNaN(keyNum) || keyNum < 1 || keyNum > 9) {
       return;
     }
 
@@ -316,6 +311,25 @@ function initKeyboardListener() {
     const hasSuggestion = suggestion && suggestion.idea && suggestion.field;
 
     if (!hasSuggestion) {
+      return;
+    }
+
+    // Handle Ctrl+F for search focus (tree mode only)
+    if (event.key === 'f' || event.key === 'F') {
+      const searchInput = document.querySelector('.contract-suggestion-search-input');
+      if (searchInput) {
+        event.preventDefault();
+        event.stopPropagation();
+        searchInput.focus();
+        searchInput.select();
+        console.log('[Suggestions] Focused search input (Ctrl+F)');
+        return;
+      }
+    }
+
+    // Check for number keys 1-9
+    const keyNum = parseInt(event.key, 10);
+    if (isNaN(keyNum) || keyNum < 1 || keyNum > 9) {
       return;
     }
 
@@ -359,7 +373,7 @@ function initKeyboardListener() {
     }
   }, true); // Use capture phase to get event before Workflowy
 
-  console.log('[Suggestions] Keyboard listener initialized (Ctrl + 1-9)');
+  console.log('[Suggestions] Keyboard listener initialized (Ctrl + 1-9, Ctrl+F)');
 }
 
 /**

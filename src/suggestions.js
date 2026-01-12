@@ -377,8 +377,30 @@ function initKeyboardListener() {
 }
 
 /**
- * Accept the currently selected items (multi-select)
- * Inserts all items that have been checked via click/checkbox
+ * Get custom text lines from the textarea as items
+ * @returns {Array<{text: string, id: null}>} Array of text items
+ */
+function getCustomTextItems() {
+  const textarea = document.querySelector('.contract-suggestion-custom-input');
+  if (!textarea || !textarea.value) return [];
+
+  return textarea.value.split('\n')
+    .map(line => line.trim())
+    .filter(line => line !== '')
+    .map(text => ({ text, id: null }));
+}
+
+/**
+ * Clear the custom text textarea
+ */
+function clearCustomTextInput() {
+  const textarea = document.querySelector('.contract-suggestion-custom-input');
+  if (textarea) textarea.value = '';
+}
+
+/**
+ * Accept the currently selected items (multi-select) combined with custom text
+ * Inserts all checked items plus any custom text lines from the textarea
  * @returns {boolean} True if items were accepted successfully
  */
 function acceptSelectedItems() {
@@ -395,11 +417,6 @@ function acceptSelectedItems() {
   }
 
   const selectedIndices = UI.getSelectedIndices();
-  if (selectedIndices.length === 0) {
-    console.log('[Suggestions] No items selected');
-    return false;
-  }
-
   const items = suggestion.items || [];
 
   // Collect selected items in order (as {text, id} objects)
@@ -408,22 +425,28 @@ function acceptSelectedItems() {
     .map(idx => items[idx])
     .filter(item => item);
 
-  if (selectedItems.length === 0) {
-    console.warn('[Suggestions] No valid items to insert');
+  // Get custom text items from textarea
+  const customItems = getCustomTextItems();
+
+  // Combine selected items + custom text
+  const allItems = [...selectedItems, ...customItems];
+
+  if (allItems.length === 0) {
+    console.log('[Suggestions] No items selected and no custom text');
     return false;
   }
 
-  console.log('[Suggestions] Accepting', selectedItems.length, 'selected items for', suggestion.field);
+  console.log('[Suggestions] Accepting', selectedItems.length, 'selected +', customItems.length, 'custom items for', suggestion.field);
 
-  // Create or update the field with the selected items (will create mirrors if items have IDs)
-  const success = createOrUpdateField(suggestion.idea, suggestion.field, selectedItems);
+  // Create or update the field with all items (will create mirrors if items have IDs)
+  const success = createOrUpdateField(suggestion.idea, suggestion.field, allItems);
 
   if (success) {
     // Hide the suggestion overlay
     UI.hideSuggestion();
 
     // Show success toast
-    UI.showSuccess('Suggestion Accepted', `${suggestion.field}: ${selectedItems.length} items inserted`);
+    UI.showSuccess('Suggestion Accepted', `${suggestion.field}: ${allItems.length} items inserted`);
 
     return true;
   } else {
@@ -487,8 +510,8 @@ function acceptTreeItem(id) {
 }
 
 /**
- * Accept the currently selected tree items (multi-select in tree mode)
- * Inserts all items that have been checked via click/checkbox
+ * Accept the currently selected tree items (multi-select in tree mode) combined with custom text
+ * Inserts all checked items plus any custom text lines from the textarea
  * @returns {boolean} True if successful
  */
 function acceptSelectedTreeItems() {
@@ -504,11 +527,7 @@ function acceptSelectedTreeItems() {
     return false;
   }
 
-  const selectedIds = suggestion.selectedIds;
-  if (!selectedIds || selectedIds.size === 0) {
-    console.log('[Suggestions] No tree items selected');
-    return false;
-  }
+  const selectedIds = suggestion.selectedIds || new Set();
 
   // Find all selected items in tree by ID
   function findInTree(nodes, targetId) {
@@ -532,18 +551,24 @@ function acceptSelectedTreeItems() {
     }
   }
 
-  if (selectedItems.length === 0) {
-    console.warn('[Suggestions] No valid tree items to insert');
+  // Get custom text items from textarea
+  const customItems = getCustomTextItems();
+
+  // Combine selected items + custom text
+  const allItems = [...selectedItems, ...customItems];
+
+  if (allItems.length === 0) {
+    console.log('[Suggestions] No tree items selected and no custom text');
     return false;
   }
 
-  console.log('[Suggestions] Accepting', selectedItems.length, 'selected tree items for', suggestion.field);
+  console.log('[Suggestions] Accepting', selectedItems.length, 'selected +', customItems.length, 'custom items for', suggestion.field);
 
-  const success = createOrUpdateField(suggestion.idea, suggestion.field, selectedItems);
+  const success = createOrUpdateField(suggestion.idea, suggestion.field, allItems);
 
   if (success) {
     UI.hideSuggestion();
-    UI.showSuccess('Suggestion Accepted', `${suggestion.field}: ${selectedItems.length} items inserted`);
+    UI.showSuccess('Suggestion Accepted', `${suggestion.field}: ${allItems.length} items inserted`);
     return true;
   } else {
     UI.showError('Failed to Accept', 'Could not insert selected items');

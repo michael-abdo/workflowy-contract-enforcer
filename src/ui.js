@@ -684,8 +684,10 @@ function updateSelectionUI() {
   const insertBtn = container.querySelector('.contract-suggestion-btn-insert');
   if (insertBtn) {
     const count = currentSuggestion.selectedIndices.size;
+    const customInput = container.querySelector('.contract-suggestion-custom-input');
+    const hasCustomText = customInput && customInput.value.trim() !== '';
     insertBtn.textContent = count > 0 ? `Insert Selected (${count})` : 'Insert Selected';
-    insertBtn.disabled = count === 0;
+    insertBtn.disabled = count === 0 && !hasCustomText;
   }
 }
 
@@ -727,8 +729,10 @@ function updateTreeSelectionUI() {
   const insertBtn = container.querySelector('.contract-suggestion-btn-insert');
   if (insertBtn) {
     const count = currentSuggestion.selectedIds.size;
+    const customInput = container.querySelector('.contract-suggestion-custom-input');
+    const hasCustomText = customInput && customInput.value.trim() !== '';
     insertBtn.textContent = count > 0 ? `Insert Selected (${count})` : 'Insert Selected';
-    insertBtn.disabled = count === 0;
+    insertBtn.disabled = count === 0 && !hasCustomText;
   }
 }
 
@@ -1194,14 +1198,6 @@ function showSuggestion(idea, field, suggestion) {
     const customInput = suggestionEl.querySelector('.contract-suggestion-custom-input');
     const addBtn = suggestionEl.querySelector('.contract-suggestion-btn-add');
 
-    const insertCustomText = () => {
-      const text = customInput?.value?.trim();
-      if (text && window.ContractSuggestions?.insertCustomText) {
-        window.ContractSuggestions.insertCustomText(text);
-        customInput.value = '';
-      }
-    };
-
     if (customInput) {
       customInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
@@ -1214,16 +1210,29 @@ function showSuggestion(idea, field, suggestion) {
             const value = customInput.value;
             customInput.value = value.substring(0, start) + '\n' + value.substring(end);
             customInput.selectionStart = customInput.selectionEnd = start + 1;
+            // Update button state after adding newline
+            updateTreeSelectionUI();
           } else {
-            // Enter alone: submit
-            insertCustomText();
+            // Enter alone: submit selected items + custom text combined
+            if (window.ContractSuggestions?.acceptSelectedTreeItems) {
+              window.ContractSuggestions.acceptSelectedTreeItems();
+            }
           }
         }
+      });
+      // Update button state as user types
+      customInput.addEventListener('input', () => {
+        updateTreeSelectionUI();
       });
     }
 
     if (addBtn) {
-      addBtn.addEventListener('click', insertCustomText);
+      // Add button also triggers combined insert
+      addBtn.addEventListener('click', () => {
+        if (window.ContractSuggestions?.acceptSelectedTreeItems) {
+          window.ContractSuggestions.acceptSelectedTreeItems();
+        }
+      });
     }
 
     // Attach search input handler
@@ -1374,14 +1383,6 @@ function showSuggestion(idea, field, suggestion) {
     const customInput = suggestionEl.querySelector('.contract-suggestion-custom-input');
     const addBtn = suggestionEl.querySelector('.contract-suggestion-btn-add');
 
-    const insertCustomText = () => {
-      const text = customInput?.value?.trim();
-      if (text && window.ContractSuggestions?.insertCustomText) {
-        window.ContractSuggestions.insertCustomText(text);
-        customInput.value = '';
-      }
-    };
-
     if (customInput) {
       customInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
@@ -1394,16 +1395,29 @@ function showSuggestion(idea, field, suggestion) {
             const value = customInput.value;
             customInput.value = value.substring(0, start) + '\n' + value.substring(end);
             customInput.selectionStart = customInput.selectionEnd = start + 1;
+            // Update button state after adding newline
+            updateSelectionUI();
           } else {
-            // Enter alone: submit
-            insertCustomText();
+            // Enter alone: submit selected items + custom text combined
+            if (window.ContractSuggestions?.acceptSelectedItems) {
+              window.ContractSuggestions.acceptSelectedItems();
+            }
           }
         }
+      });
+      // Update button state as user types
+      customInput.addEventListener('input', () => {
+        updateSelectionUI();
       });
     }
 
     if (addBtn) {
-      addBtn.addEventListener('click', insertCustomText);
+      // Add button also triggers combined insert
+      addBtn.addEventListener('click', () => {
+        if (window.ContractSuggestions?.acceptSelectedItems) {
+          window.ContractSuggestions.acceptSelectedItems();
+        }
+      });
     }
 
     console.log('[UI] Showing', items.length, 'flat suggestion items for', field);

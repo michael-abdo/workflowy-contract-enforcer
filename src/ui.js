@@ -368,6 +368,38 @@ function injectStyles() {
       font-weight: 600;
     }
 
+    /* Custom text input row */
+    .contract-suggestion-custom-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 10px;
+      align-items: flex-start;
+    }
+
+    .contract-suggestion-custom-input {
+      flex: 1;
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      border-radius: 4px;
+      padding: 6px 10px;
+      color: white;
+      font-size: 12px;
+      font-family: inherit;
+      outline: none;
+      resize: vertical;
+      min-height: 32px;
+      max-height: 120px;
+    }
+
+    .contract-suggestion-custom-input:focus {
+      border-color: rgba(255, 255, 255, 0.5);
+      background: rgba(0, 0, 0, 0.4);
+    }
+
+    .contract-suggestion-custom-input::placeholder {
+      color: rgba(255, 255, 255, 0.5);
+    }
+
     /* Tree structure styles */
     .contract-suggestion-tree {
       display: flex;
@@ -1116,6 +1148,14 @@ function showSuggestion(idea, field, suggestion) {
     // Build tree UI
     const treeEl = renderSuggestionTree(tree);
 
+    // Custom text input row
+    const customRowEl = document.createElement('div');
+    customRowEl.className = 'contract-suggestion-custom-row';
+    customRowEl.innerHTML = `
+      <textarea class="contract-suggestion-custom-input" placeholder="Type custom text (Shift+Enter for new line)..." rows="1"></textarea>
+      <button class="contract-suggestion-btn contract-suggestion-btn-primary contract-suggestion-btn-add">Add</button>
+    `;
+
     // Actions row - "Insert All" number will be updated by renumberVisibleItems
     const actionsEl = document.createElement('div');
     actionsEl.className = 'contract-suggestion-actions';
@@ -1142,12 +1182,49 @@ function showSuggestion(idea, field, suggestion) {
     `;
     suggestionEl.appendChild(searchEl);
     suggestionEl.appendChild(treeEl);
+    suggestionEl.appendChild(customRowEl);
     suggestionEl.appendChild(actionsEl);
 
     container.appendChild(suggestionEl);
 
     // Renumber visible items (all top-level initially visible)
     renumberVisibleItems();
+
+    // Attach custom text input handlers
+    const customInput = suggestionEl.querySelector('.contract-suggestion-custom-input');
+    const addBtn = suggestionEl.querySelector('.contract-suggestion-btn-add');
+
+    const insertCustomText = () => {
+      const text = customInput?.value?.trim();
+      if (text && window.ContractSuggestions?.insertCustomText) {
+        window.ContractSuggestions.insertCustomText(text);
+        customInput.value = '';
+      }
+    };
+
+    if (customInput) {
+      customInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          e.stopPropagation();
+          if (e.shiftKey) {
+            // Shift+Enter: insert newline at cursor position
+            const start = customInput.selectionStart;
+            const end = customInput.selectionEnd;
+            const value = customInput.value;
+            customInput.value = value.substring(0, start) + '\n' + value.substring(end);
+            customInput.selectionStart = customInput.selectionEnd = start + 1;
+          } else {
+            // Enter alone: submit
+            insertCustomText();
+          }
+        }
+      });
+    }
+
+    if (addBtn) {
+      addBtn.addEventListener('click', insertCustomText);
+    }
 
     // Attach search input handler
     const searchInput = suggestionEl.querySelector('.contract-suggestion-search-input');
@@ -1222,6 +1299,14 @@ function showSuggestion(idea, field, suggestion) {
       `;
     });
 
+    // Custom text input row
+    const customRowHtml = `
+      <div class="contract-suggestion-custom-row">
+        <textarea class="contract-suggestion-custom-input" placeholder="Type custom text (Shift+Enter for new line)..." rows="1"></textarea>
+        <button class="contract-suggestion-btn contract-suggestion-btn-primary contract-suggestion-btn-add">Add</button>
+      </div>
+    `;
+
     // Add actions row with Insert All and Insert Selected
     const actionsHtml = items.length > 0 ? `
       <div class="contract-suggestion-actions">
@@ -1236,6 +1321,7 @@ function showSuggestion(idea, field, suggestion) {
       </div>
       <div class="contract-suggestion-question">${escapeHtml(prompt)}</div>
       <div class="contract-suggestion-items">${itemsHtml}</div>
+      ${customRowHtml}
       ${actionsHtml}
     `;
 
@@ -1282,6 +1368,42 @@ function showSuggestion(idea, field, suggestion) {
           window.ContractSuggestions.acceptSuggestion(null);
         }
       });
+    }
+
+    // Attach custom text input handlers
+    const customInput = suggestionEl.querySelector('.contract-suggestion-custom-input');
+    const addBtn = suggestionEl.querySelector('.contract-suggestion-btn-add');
+
+    const insertCustomText = () => {
+      const text = customInput?.value?.trim();
+      if (text && window.ContractSuggestions?.insertCustomText) {
+        window.ContractSuggestions.insertCustomText(text);
+        customInput.value = '';
+      }
+    };
+
+    if (customInput) {
+      customInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          e.stopPropagation();
+          if (e.shiftKey) {
+            // Shift+Enter: insert newline at cursor position
+            const start = customInput.selectionStart;
+            const end = customInput.selectionEnd;
+            const value = customInput.value;
+            customInput.value = value.substring(0, start) + '\n' + value.substring(end);
+            customInput.selectionStart = customInput.selectionEnd = start + 1;
+          } else {
+            // Enter alone: submit
+            insertCustomText();
+          }
+        }
+      });
+    }
+
+    if (addBtn) {
+      addBtn.addEventListener('click', insertCustomText);
     }
 
     console.log('[UI] Showing', items.length, 'flat suggestion items for', field);

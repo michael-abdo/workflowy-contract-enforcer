@@ -551,6 +551,59 @@ function acceptSelectedTreeItems() {
   }
 }
 
+/**
+ * Insert custom text as child node(s) of the current field
+ * Each line becomes a separate child node
+ * @param {string} text - The text to insert (may contain newlines)
+ * @returns {boolean} True if successful
+ */
+function insertCustomText(text) {
+  const UI = window.ContractUI;
+  if (!UI) {
+    console.warn('[Suggestions] ContractUI not available');
+    return false;
+  }
+
+  const suggestion = UI.getCurrentSuggestion();
+  if (!suggestion || !suggestion.idea || !suggestion.field) {
+    console.log('[Suggestions] No active suggestion to insert custom text');
+    return false;
+  }
+
+  if (!text || text.trim() === '') {
+    console.log('[Suggestions] No text to insert');
+    return false;
+  }
+
+  // Split by newlines and filter empty lines
+  const lines = text.split('\n')
+    .map(line => line.trim())
+    .filter(line => line !== '');
+
+  if (lines.length === 0) {
+    console.log('[Suggestions] No valid lines to insert');
+    return false;
+  }
+
+  console.log('[Suggestions] Inserting', lines.length, 'custom text item(s) for', suggestion.field);
+
+  // Convert lines to items (text-only, no ID, so they won't be mirrors)
+  const items = lines.map(line => ({ text: line, id: null }));
+
+  const success = createOrUpdateField(suggestion.idea, suggestion.field, items);
+
+  if (success) {
+    const message = lines.length === 1
+      ? `Added to ${suggestion.field}`
+      : `Added ${lines.length} items to ${suggestion.field}`;
+    UI.showSuccess('Text Added', message);
+    return true;
+  } else {
+    UI.showError('Failed to Add', 'Could not insert custom text');
+    return false;
+  }
+}
+
 // Export for use in other modules
 window.ContractSuggestions = {
   findFieldNode,
@@ -559,6 +612,7 @@ window.ContractSuggestions = {
   acceptSelectedItems,
   acceptTreeItem,
   acceptSelectedTreeItems,
+  insertCustomText,
   initKeyboardListener
 };
 

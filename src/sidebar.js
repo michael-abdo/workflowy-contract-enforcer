@@ -28,7 +28,93 @@ const SAVED_PROMPTS = [
   {
     id: 'contract-converter',
     name: 'Contract Converter',
-    systemPrompt: `You are a contract structuring assistant for WorkFlowy. Your job is to convert raw braindumps into properly structured, disambiguous, non-overlapping contracts.
+    systemPrompt: null,  // Built dynamically with project context
+    usesProjectContext: true  // Flag to trigger dynamic building
+  },
+  {
+    id: 'brainstorm',
+    name: 'Brainstorm Ideas',
+    systemPrompt: `You are a brainstorming assistant. Generate creative, diverse ideas related to the user's topic.
+
+Rules:
+- Generate 5-10 distinct ideas
+- Each idea should be actionable
+- Include both obvious and unconventional approaches
+- Use WorkFlowy format (- item with 2-space indents for sub-points)
+- Group related ideas under themes if helpful`
+  },
+  {
+    id: 'breakdown',
+    name: 'Break Down Task',
+    systemPrompt: `You are a task breakdown assistant. Take the user's task and break it into atomic, actionable subtasks.
+
+Rules:
+- Each subtask should be completable in one session
+- Order tasks by dependency (blockers first)
+- Include verification steps where appropriate
+- Use WorkFlowy format with proper nesting
+- Aim for 3-7 subtasks per main task`
+  }
+];
+
+/**
+ * Get project context (field values from parent #project)
+ * @param {Object} item - Current WF item
+ * @returns {Object} Project context with field values
+ */
+function getProjectContext(item) {
+  const context = {
+    hasProject: false,
+    projectName: null,
+    stakeholders: [],
+    systemReference: [],
+    intent: null,
+    qaDocument: []
+  };
+
+  if (!item || !window.ContractParser) return context;
+
+  try {
+    const project = window.ContractParser.findProjectAncestor(item);
+    if (!project) return context;
+
+    context.hasProject = true;
+    context.projectName = project.getNameInPlainText ?
+      project.getNameInPlainText().replace(/#project/gi, '').trim() :
+      'Untitled Project';
+
+    // Get stakeholders
+    const stakeholders = window.ContractParser.getProjectFieldValues(project, 'Stakeholders');
+    if (stakeholders) context.stakeholders = stakeholders;
+
+    // Get system reference
+    const sysRef = window.ContractParser.getProjectFieldValues(project, 'System Reference');
+    if (sysRef) context.systemReference = sysRef;
+
+    // Get intent (single value)
+    const intent = window.ContractParser.getProjectFieldValues(project, 'Intent');
+    if (intent && intent.length > 0) context.intent = intent[0];
+
+    // Get QA documents
+    const qaDocs = window.ContractParser.getProjectFieldValues(project, 'QA Documents') ||
+                   window.ContractParser.getProjectFieldValues(project, 'QA Document');
+    if (qaDocs) context.qaDocument = qaDocs;
+
+    console.log('[Sidebar] Project context:', context);
+  } catch (e) {
+    console.error('[Sidebar] Error getting project context:', e);
+  }
+
+  return context;
+}
+
+/**
+ * Build Contract Converter prompt with project context
+ * @param {Object} projectContext - Context from getProjectContext()
+ * @returns {string} System prompt with project variables
+ */
+function buildContractConverterPrompt(projectContext) {
+  const basePrompt = `You are a contract structuring assistant for WorkFlowy. Your job is to convert raw braindumps into properly structured, disambiguous, non-overlapping contracts.
 
 ## What is a Contract?
 A contract is a managed idea marked with #contract tag. It transforms freeform thoughts into executable, verifiable commitments.
@@ -64,7 +150,48 @@ Each contract has these child nodes:
 
 7. **QA Results** - Evidence of completion
    - Links to test results, screenshots, approvals
-   - Format: Bullet list with evidence links
+   - Format: Bullet list with evidence links`;
+
+  // Add project context if available
+  let projectSection = '';
+  if (projectContext.hasProject) {
+    projectSection = `
+
+## Parent Project Context
+You are working inside the project: "${projectContext.projectName}"
+
+USE THESE PROJECT VALUES as defaults for generated contracts:`;
+
+    if (projectContext.stakeholders.length > 0) {
+      projectSection += `
+
+**Project Stakeholders** (use these for contracts):
+${projectContext.stakeholders.map(s => `- ${s}`).join('\n')}`;
+    }
+
+    if (projectContext.systemReference.length > 0) {
+      projectSection += `
+
+**Project System References** (use relevant ones for contracts):
+${projectContext.systemReference.map(s => `- ${s}`).join('\n')}`;
+    }
+
+    if (projectContext.intent) {
+      projectSection += `
+
+**Project Intent** (contracts should align with this):
+- ${projectContext.intent}`;
+    }
+
+    if (projectContext.qaDocument.length > 0) {
+      projectSection += `
+
+**Project QA Documents** (reference these for contracts):
+${projectContext.qaDocument.map(s => `- ${s}`).join('\n')}`;
+    }
+  }
+
+  const outputRules = `
 
 ## Output Rules
 1. Each distinct goal = separate contract
@@ -72,53 +199,30 @@ Each contract has these child nodes:
 3. Use WorkFlowy format with proper indentation
 4. Include #contract tag on parent node
 5. If input is ambiguous, create multiple focused contracts rather than one vague one
+${projectContext.hasProject ? '6. IMPORTANT: Pre-populate Stakeholders and System Reference from project values above' : ''}
 
 ## Output Format
 - Goal Name #contract
   - Intent
     - [Falsifiable statement of success]
   - Stakeholders
-    - [Person/role 1]
-    - [Person/role 2]
+${projectContext.stakeholders.length > 0 ? projectContext.stakeholders.map(s => `    - ${s}`).join('\n') : '    - [Person/role 1]\n    - [Person/role 2]'}
   - Owner
     - [Responsible person/team]
   - System Reference
-    - [Exact location/path/URL]
+${projectContext.systemReference.length > 0 ? projectContext.systemReference.map(s => `    - ${s}`).join('\n') : '    - [Exact location/path/URL]'}
   - QA Document
-    - [Link to test criteria]
+${projectContext.qaDocument.length > 0 ? projectContext.qaDocument.map(s => `    - ${s}`).join('\n') : '    - [Link to test criteria]'}
   - Update Set
     - [Change 1]
     - [Change 2]
   - QA Results
     - [Leave empty - filled after completion]
 
-Convert the user's input into properly structured contracts. Create as many separate contracts as needed to avoid overlap.`
-  },
-  {
-    id: 'brainstorm',
-    name: 'Brainstorm Ideas',
-    systemPrompt: `You are a brainstorming assistant. Generate creative, diverse ideas related to the user's topic.
+Convert the user's input into properly structured contracts. Create as many separate contracts as needed to avoid overlap.`;
 
-Rules:
-- Generate 5-10 distinct ideas
-- Each idea should be actionable
-- Include both obvious and unconventional approaches
-- Use WorkFlowy format (- item with 2-space indents for sub-points)
-- Group related ideas under themes if helpful`
-  },
-  {
-    id: 'breakdown',
-    name: 'Break Down Task',
-    systemPrompt: `You are a task breakdown assistant. Take the user's task and break it into atomic, actionable subtasks.
-
-Rules:
-- Each subtask should be completable in one session
-- Order tasks by dependency (blockers first)
-- Include verification steps where appropriate
-- Use WorkFlowy format with proper nesting
-- Aim for 3-7 subtasks per main task`
-  }
-];
+  return basePrompt + projectSection + outputRules;
+}
 
 // Sidebar state
 let sidebarState = {
@@ -1691,6 +1795,14 @@ async function handleAskAI() {
   const context = currentItem ? buildVisibleContext(currentItem) : '';
   console.log('[Sidebar] Context for AI:', context.split('\n').length, 'lines');
 
+  // Build dynamic prompt for templates that use project context
+  let finalSystemPrompt = selectedPrompt?.systemPrompt;
+  if (selectedPrompt?.usesProjectContext) {
+    const projectContext = getProjectContext(currentItem);
+    finalSystemPrompt = buildContractConverterPrompt(projectContext);
+    console.log('[Sidebar] Built dynamic prompt with project context:', projectContext.hasProject ? projectContext.projectName : 'no project');
+  }
+
   // Show loading state
   sidebarState.isLoading = true;
   if (askBtn) {
@@ -1701,7 +1813,7 @@ async function handleAskAI() {
   textarea.disabled = true;
 
   try {
-    const response = await callOpenAI(prompt, context, selectedPrompt?.systemPrompt);
+    const response = await callOpenAI(prompt, context, finalSystemPrompt);
 
     // Keep the WorkFlowy format intact (preserve dashes and indentation)
     const lines = response.split('\n').filter(line => line.trim());

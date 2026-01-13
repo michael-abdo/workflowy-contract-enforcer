@@ -15,6 +15,8 @@ console.log('[Contract Sidebar] Script loading...');
 const SIDEBAR_CONTAINER_ID = 'contract-sidebar-container';
 const SIDEBAR_STYLES_ID = 'contract-sidebar-styles';
 const SIDEBAR_TOGGLE_ID = 'contract-sidebar-toggle';
+const OPENAI_MODEL = 'gpt-4o-mini';
+const OPENAI_API_KEY_STORAGE = 'contract_enforcer_openai_key';
 
 // Sidebar state
 let sidebarState = {
@@ -24,8 +26,14 @@ let sidebarState = {
   currentItems: [],      // Current content (array of {text, id})
   proposedItems: [],     // Proposed content (array of {text, id})
   editedItems: [],       // User-edited content
-  isEditing: false
+  isEditing: false,
+  isLoading: false,      // AI request in progress
+  currentWFItem: null,
+  apiKey: null           // Cached API key
 };
+
+// Pending OpenAI requests
+const pendingRequests = new Map();
 
 /**
  * Inject sidebar-specific styles
@@ -340,6 +348,178 @@ function injectSidebarStyles() {
     body.contract-sidebar-open #${SIDEBAR_TOGGLE_ID} svg {
       transform: rotate(180deg);
     }
+
+    /* AI Chatbox */
+    .contract-sidebar-chatbox {
+      display: flex;
+      flex-direction: column;
+      gap: var(--wf-space-s, 8px);
+      padding: var(--wf-space-m, 12px);
+      border-bottom: 1px solid var(--wf-border-default, #333);
+      background: var(--wf-background-secondary, #252525);
+    }
+
+    .contract-sidebar-chatbox-label {
+      font-size: var(--wf-font-size-xs, 11px);
+      font-weight: var(--wf-font-weight-semibold, 600);
+      color: var(--wf-text-helper, #888);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .contract-sidebar-chatbox-input {
+      width: 100%;
+      min-height: 60px;
+      padding: var(--wf-space-s, 8px);
+      border: 1px solid var(--wf-border-default, #444);
+      border-radius: var(--wf-radius-s, 4px);
+      background: var(--wf-background, #1e1e1e);
+      color: var(--wf-text-primary, #e0e0e0);
+      font-family: inherit;
+      font-size: var(--wf-font-size-s, 12px);
+      resize: vertical;
+    }
+
+    .contract-sidebar-chatbox-input:focus {
+      outline: none;
+      border-color: var(--wf-highlight, #6eb5ff);
+    }
+
+    .contract-sidebar-chatbox-input::placeholder {
+      color: var(--wf-text-helper, #666);
+    }
+
+    .contract-sidebar-chatbox-actions {
+      display: flex;
+      gap: var(--wf-space-s, 8px);
+      align-items: center;
+    }
+
+    .contract-sidebar-btn-ai {
+      flex: 1;
+      padding: var(--wf-space-s, 8px) var(--wf-space-m, 12px);
+      border-radius: var(--wf-radius-s, 4px);
+      font-size: var(--wf-font-size-s, 12px);
+      font-weight: var(--wf-font-weight-semibold, 600);
+      cursor: pointer;
+      border: none;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+
+    .contract-sidebar-btn-ai:hover {
+      opacity: 0.9;
+    }
+
+    .contract-sidebar-btn-ai:active {
+      transform: scale(0.98);
+    }
+
+    .contract-sidebar-btn-ai:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .contract-sidebar-btn-settings {
+      padding: var(--wf-space-s, 8px);
+      border-radius: var(--wf-radius-s, 4px);
+      background: var(--wf-button-background-secondary, #333);
+      border: none;
+      color: var(--wf-icon-tertiary, #888);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .contract-sidebar-btn-settings:hover {
+      background: var(--wf-button-background-secondary-hover, #444);
+      color: var(--wf-text-primary, #e0e0e0);
+    }
+
+    /* Loading spinner */
+    .contract-sidebar-loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: var(--wf-space-l, 16px);
+      color: var(--wf-text-helper, #888);
+      font-size: var(--wf-font-size-s, 12px);
+    }
+
+    .contract-sidebar-spinner {
+      width: 20px;
+      height: 20px;
+      border: 2px solid var(--wf-border-default, #444);
+      border-top-color: var(--wf-highlight, #6eb5ff);
+      border-radius: 50%;
+      animation: sidebar-spin 0.8s linear infinite;
+      margin-right: var(--wf-space-s, 8px);
+    }
+
+    @keyframes sidebar-spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Error state */
+    .contract-sidebar-error {
+      padding: var(--wf-space-m, 12px);
+      background: rgba(248, 81, 73, 0.1);
+      border: 1px solid rgba(248, 81, 73, 0.3);
+      border-radius: var(--wf-radius-s, 4px);
+      color: #f85149;
+      font-size: var(--wf-font-size-s, 12px);
+      margin: var(--wf-space-s, 8px) 0;
+    }
+
+    /* API Key modal */
+    .contract-sidebar-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 999999;
+    }
+
+    .contract-sidebar-modal-content {
+      background: var(--wf-background, #1e1e1e);
+      border: 1px solid var(--wf-border-default, #333);
+      border-radius: var(--wf-radius-m, 8px);
+      padding: var(--wf-space-l, 16px);
+      width: 320px;
+      max-width: 90vw;
+    }
+
+    .contract-sidebar-modal-title {
+      font-size: var(--wf-font-size-base, 14px);
+      font-weight: var(--wf-font-weight-semibold, 600);
+      color: var(--wf-text-primary, #e0e0e0);
+      margin-bottom: var(--wf-space-m, 12px);
+    }
+
+    .contract-sidebar-modal-input {
+      width: 100%;
+      padding: var(--wf-space-s, 8px);
+      border: 1px solid var(--wf-border-default, #444);
+      border-radius: var(--wf-radius-s, 4px);
+      background: var(--wf-background-secondary, #252525);
+      color: var(--wf-text-primary, #e0e0e0);
+      font-family: inherit;
+      font-size: var(--wf-font-size-s, 12px);
+      margin-bottom: var(--wf-space-m, 12px);
+    }
+
+    .contract-sidebar-modal-actions {
+      display: flex;
+      gap: var(--wf-space-s, 8px);
+      justify-content: flex-end;
+    }
   `;
 
   document.head.appendChild(styles);
@@ -468,11 +648,25 @@ function renderSidebarForNode(nodeName, children) {
         </svg>
       </button>
     </div>
+    <div class="contract-sidebar-chatbox">
+      <div class="contract-sidebar-chatbox-label">Ask AI</div>
+      <textarea class="contract-sidebar-chatbox-input" id="sidebar-chat-input" placeholder="What would you like to add? (e.g., 'Break this into subtasks' or 'Add pros and cons')"></textarea>
+      <div class="contract-sidebar-chatbox-actions">
+        <button class="contract-sidebar-btn-ai" id="sidebar-ask-ai-btn">
+          <span>Generate</span>
+        </button>
+        <button class="contract-sidebar-btn-settings" id="sidebar-settings-btn" title="API Settings">
+          <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/>
+          </svg>
+        </button>
+      </div>
+    </div>
     <div class="contract-sidebar-body">
       <div class="contract-sidebar-section proposed">
-        <div class="contract-sidebar-section-header proposed">Add Content</div>
+        <div class="contract-sidebar-section-header proposed">Generated Content</div>
         <div class="contract-sidebar-tree editable" id="sidebar-proposed-tree" contenteditable="true" data-placeholder="Type or paste content here...">
-          ${sidebarState.proposedItems.length > 0 ? renderTreeItems(sidebarState.proposedItems, true) : '<div class="contract-sidebar-placeholder">Type or paste content to add as children...</div>'}
+          ${sidebarState.proposedItems.length > 0 ? renderTreeItems(sidebarState.proposedItems, true) : '<div class="contract-sidebar-placeholder">AI-generated content will appear here, or type/paste your own...</div>'}
         </div>
       </div>
     </div>
@@ -832,11 +1026,39 @@ function attachEventHandlers(container) {
     proposedTree.addEventListener('input', () => handleEdit(proposedTree));
     proposedTree.addEventListener('focus', () => {
       sidebarState.isEditing = true;
+      // Clear placeholder on focus
+      const placeholder = proposedTree.querySelector('.contract-sidebar-placeholder');
+      if (placeholder) {
+        placeholder.remove();
+      }
     });
     proposedTree.addEventListener('blur', () => {
       sidebarState.isEditing = false;
       // Parse edited content
       parseEditedContent(proposedTree);
+    });
+  }
+
+  // Ask AI button
+  const askAiBtn = container.querySelector('#sidebar-ask-ai-btn');
+  if (askAiBtn) {
+    askAiBtn.addEventListener('click', () => handleAskAI());
+  }
+
+  // Settings button
+  const settingsBtn = container.querySelector('#sidebar-settings-btn');
+  if (settingsBtn) {
+    settingsBtn.addEventListener('click', () => handleSettingsClick());
+  }
+
+  // Chat input - Enter to submit (Shift+Enter for newline)
+  const chatInput = container.querySelector('#sidebar-chat-input');
+  if (chatInput) {
+    chatInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        handleAskAI();
+      }
     });
   }
 }
@@ -968,6 +1190,281 @@ function getState() {
   return { ...sidebarState };
 }
 
+// ==================== OpenAI Integration ====================
+
+/**
+ * Get stored API key
+ * @returns {Promise<string|null>}
+ */
+async function getApiKey() {
+  if (sidebarState.apiKey) {
+    return sidebarState.apiKey;
+  }
+
+  return new Promise((resolve) => {
+    const handler = (event) => {
+      if (event.data?.type === 'CONTRACT_ENFORCER_STORAGE_RESULT' &&
+          event.data?.payload?.key === OPENAI_API_KEY_STORAGE) {
+        window.removeEventListener('message', handler);
+        const key = event.data.payload.value || null;
+        sidebarState.apiKey = key;
+        resolve(key);
+      }
+    };
+    window.addEventListener('message', handler);
+
+    window.postMessage({
+      type: 'CONTRACT_ENFORCER_STORAGE_GET',
+      payload: { key: OPENAI_API_KEY_STORAGE }
+    }, '*');
+
+    // Timeout after 2 seconds
+    setTimeout(() => {
+      window.removeEventListener('message', handler);
+      resolve(null);
+    }, 2000);
+  });
+}
+
+/**
+ * Store API key
+ * @param {string} key
+ */
+function storeApiKey(key) {
+  sidebarState.apiKey = key;
+  window.postMessage({
+    type: 'CONTRACT_ENFORCER_STORAGE_SET',
+    payload: { key: OPENAI_API_KEY_STORAGE, value: key }
+  }, '*');
+}
+
+/**
+ * Show API key modal
+ * @returns {Promise<string|null>}
+ */
+function showApiKeyModal() {
+  return new Promise((resolve) => {
+    const modal = document.createElement('div');
+    modal.className = 'contract-sidebar-modal';
+    modal.innerHTML = `
+      <div class="contract-sidebar-modal-content">
+        <div class="contract-sidebar-modal-title">Enter OpenAI API Key</div>
+        <input type="password" class="contract-sidebar-modal-input" placeholder="sk-..." id="sidebar-api-key-input">
+        <div class="contract-sidebar-modal-actions">
+          <button class="contract-sidebar-btn contract-sidebar-btn-cancel" id="sidebar-api-key-cancel">Cancel</button>
+          <button class="contract-sidebar-btn contract-sidebar-btn-approve" id="sidebar-api-key-save">Save</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    const input = modal.querySelector('#sidebar-api-key-input');
+    const saveBtn = modal.querySelector('#sidebar-api-key-save');
+    const cancelBtn = modal.querySelector('#sidebar-api-key-cancel');
+
+    input.focus();
+
+    const cleanup = () => {
+      modal.remove();
+    };
+
+    saveBtn.addEventListener('click', () => {
+      const key = input.value.trim();
+      if (key) {
+        storeApiKey(key);
+        cleanup();
+        resolve(key);
+      }
+    });
+
+    cancelBtn.addEventListener('click', () => {
+      cleanup();
+      resolve(null);
+    });
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        saveBtn.click();
+      } else if (e.key === 'Escape') {
+        cancelBtn.click();
+      }
+    });
+
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        cancelBtn.click();
+      }
+    });
+  });
+}
+
+/**
+ * Call OpenAI API
+ * @param {string} prompt - User prompt
+ * @param {string} context - Page context
+ * @returns {Promise<string>}
+ */
+async function callOpenAI(prompt, context) {
+  let apiKey = await getApiKey();
+
+  if (!apiKey) {
+    apiKey = await showApiKeyModal();
+    if (!apiKey) {
+      throw new Error('API key required');
+    }
+  }
+
+  const requestId = Date.now().toString();
+
+  const systemPrompt = `You are a helpful assistant that generates structured content for a note-taking app called WorkFlowy.
+
+The user is currently viewing a node with this content:
+"""
+${context}
+"""
+
+Based on the user's request, generate a list of items to add as children to this node.
+
+IMPORTANT: Return ONLY a simple list with one item per line. No bullet points, no numbering, no markdown. Just plain text, one item per line.
+
+Example response format:
+First item
+Second item
+Third item`;
+
+  return new Promise((resolve, reject) => {
+    const handler = (event) => {
+      if (event.data?.type === 'CONTRACT_ENFORCER_OPENAI_RESULT' &&
+          event.data?.payload?.requestId === requestId) {
+        window.removeEventListener('message', handler);
+
+        if (event.data.payload.success) {
+          const content = event.data.payload.data.choices?.[0]?.message?.content;
+          if (content) {
+            resolve(content);
+          } else {
+            reject(new Error('No response content'));
+          }
+        } else {
+          reject(new Error(event.data.payload.error || 'API call failed'));
+        }
+      }
+    };
+    window.addEventListener('message', handler);
+
+    // Store pending request
+    pendingRequests.set(requestId, { resolve, reject, handler });
+
+    window.postMessage({
+      type: 'CONTRACT_ENFORCER_OPENAI_CALL',
+      payload: {
+        requestId,
+        apiKey,
+        model: OPENAI_MODEL,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: prompt }
+        ]
+      }
+    }, '*');
+
+    // Timeout after 30 seconds
+    setTimeout(() => {
+      window.removeEventListener('message', handler);
+      pendingRequests.delete(requestId);
+      reject(new Error('Request timed out'));
+    }, 30000);
+  });
+}
+
+/**
+ * Handle Ask AI button click
+ */
+async function handleAskAI() {
+  const chatInput = document.querySelector('#sidebar-chat-input');
+  const proposedTree = document.querySelector('#sidebar-proposed-tree');
+  const askBtn = document.querySelector('#sidebar-ask-ai-btn');
+
+  if (!chatInput || !proposedTree) return;
+
+  const prompt = chatInput.value.trim();
+  if (!prompt) {
+    if (window.ContractUI) {
+      window.ContractUI.showWarning('Empty Prompt', 'Enter a message for the AI');
+    }
+    return;
+  }
+
+  // Get current node context
+  const currentItem = getCurrentItem();
+  const context = currentItem ? currentItem.getNameInPlainText() : '';
+
+  // Show loading state
+  sidebarState.isLoading = true;
+  if (askBtn) askBtn.disabled = true;
+  proposedTree.innerHTML = `
+    <div class="contract-sidebar-loading">
+      <div class="contract-sidebar-spinner"></div>
+      <span>Thinking...</span>
+    </div>
+  `;
+
+  try {
+    const response = await callOpenAI(prompt, context);
+
+    // Parse response into items (one per line)
+    const items = response
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line && !line.startsWith('-') && !line.match(/^\d+\./))
+      .map(text => ({ text, id: null }));
+
+    // Clean up any remaining list markers
+    const cleanedItems = items.map(item => ({
+      ...item,
+      text: item.text.replace(/^[-•*]\s*/, '').replace(/^\d+\.\s*/, '')
+    }));
+
+    sidebarState.proposedItems = cleanedItems;
+    sidebarState.editedItems = [...cleanedItems];
+
+    // Render items
+    if (cleanedItems.length > 0) {
+      proposedTree.innerHTML = renderTreeItems(cleanedItems, true);
+    } else {
+      proposedTree.innerHTML = '<div class="contract-sidebar-placeholder">No items generated</div>';
+    }
+
+    console.log('[Sidebar] AI generated', cleanedItems.length, 'items');
+
+  } catch (e) {
+    console.error('[Sidebar] AI error:', e);
+    proposedTree.innerHTML = `
+      <div class="contract-sidebar-error">
+        ${escapeHtml(e.message)}
+      </div>
+      <div class="contract-sidebar-placeholder">Type or paste content to add as children...</div>
+    `;
+
+    if (window.ContractUI) {
+      window.ContractUI.showError('AI Error', e.message);
+    }
+  } finally {
+    sidebarState.isLoading = false;
+    if (askBtn) askBtn.disabled = false;
+  }
+}
+
+/**
+ * Handle settings button click
+ */
+async function handleSettingsClick() {
+  await showApiKeyModal();
+}
+
+// ==================== End OpenAI Integration ====================
+
 // Export module
 window.ContractSidebar = {
   show,
@@ -975,7 +1472,9 @@ window.ContractSidebar = {
   toggle,
   isVisible,
   getState,
-  injectStyles: injectSidebarStyles
+  injectStyles: injectSidebarStyles,
+  askAI: handleAskAI,
+  setApiKey: storeApiKey
 };
 
 console.log('[Contract Sidebar] Loaded');

@@ -9,7 +9,8 @@
   ],
   "host_permissions": [
     "*://workflowy.com/*",
-    "*://beta.workflowy.com/*"
+    "*://beta.workflowy.com/*",
+    "https://api.openai.com/*"
   ],
   "content_scripts": [
     {

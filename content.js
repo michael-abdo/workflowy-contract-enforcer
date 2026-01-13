@@ -125,6 +125,51 @@ window.addEventListener('message', async (event) => {
       console.error('[Contract Enforcer] Failed to log event:', e);
     }
   }
+
+  // Handle OpenAI API calls
+  if (type === 'CONTRACT_ENFORCER_OPENAI_CALL') {
+    const { requestId, apiKey, messages, model } = payload;
+
+    try {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: model || 'gpt-4o-mini',
+          messages: messages,
+          temperature: 0.7
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error?.message || `API error: ${response.status}`);
+      }
+
+      window.postMessage({
+        type: 'CONTRACT_ENFORCER_OPENAI_RESULT',
+        payload: {
+          requestId,
+          success: true,
+          data: data
+        }
+      }, '*');
+    } catch (e) {
+      console.error('[Contract Enforcer] OpenAI API error:', e);
+      window.postMessage({
+        type: 'CONTRACT_ENFORCER_OPENAI_RESULT',
+        payload: {
+          requestId,
+          success: false,
+          error: e.message
+        }
+      }, '*');
+    }
+  }
 });
 
 // Initialize - inject all scripts

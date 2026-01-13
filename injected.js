@@ -24,7 +24,8 @@ function waitForModules(timeout = 5000) {
           window.ContractObserver &&
           typeof window.ContractObserver.init === 'function' &&
           window.ContractUI &&
-          window.ContractSuggestions) {
+          window.ContractSuggestions &&
+          window.ContractSidebar) {
         resolve();
       } else if (Date.now() - startTime > timeout) {
         reject(new Error('Timeout waiting for modules'));
@@ -71,10 +72,15 @@ async function initializeContractEnforcer() {
     const Integrity = window.ContractIntegrity;
     const Observer = window.ContractObserver;
     const UI = window.ContractUI;
+    const Sidebar = window.ContractSidebar;
 
     // Initialize UI styles
     console.log("[Contract Enforcer] Injecting UI styles...");
     UI.injectStyles();
+
+    // Initialize Sidebar styles
+    console.log("[Contract Enforcer] Injecting Sidebar styles...");
+    Sidebar.injectStyles();
 
     // Helper to check if we're focused on a specific contract
     const isFocusedOnContract = (nodeId) => {
@@ -204,6 +210,14 @@ async function initializeContractEnforcer() {
       }
     });
 
+    // Add keyboard shortcut for sidebar toggle (Ctrl+Shift+S)
+    document.addEventListener('keydown', (e) => {
+      if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        Sidebar.toggle();
+      }
+    });
+
     console.log("[Contract Enforcer] Observer initialized");
 
     // Initialize keyboard listener for suggestions
@@ -270,11 +284,38 @@ async function initializeContractEnforcer() {
         }
       },
 
+      // Sidebar methods
+      showSidebar: (nodeId) => {
+        const idea = nodeId ? Observer.getIdea(nodeId) : null;
+        if (!idea) {
+          // Try to get from current focused contract
+          const focused = Parser.getFocusedItem();
+          if (focused) {
+            const focusedIdea = Observer.getIdea(focused.data.id);
+            if (focusedIdea) {
+              const validation = Integrity.validate_idea(Observer.ideaStore, focusedIdea);
+              const suggestion = Integrity.get_field_suggestion(validation.next_field, focusedIdea);
+              Sidebar.show(focusedIdea, validation.next_field, suggestion);
+              return;
+            }
+          }
+          console.log('[Contract Enforcer] No contract selected');
+          return;
+        }
+        const validation = Integrity.validate_idea(Observer.ideaStore, idea);
+        const suggestion = Integrity.get_field_suggestion(validation.next_field, idea);
+        Sidebar.show(idea, validation.next_field, suggestion);
+      },
+
+      hideSidebar: () => Sidebar.hide(),
+      toggleSidebar: () => Sidebar.toggle(),
+
       // Access to modules
       Parser: Parser,
       Integrity: Integrity,
       Observer: Observer,
-      UI: UI
+      UI: UI,
+      Sidebar: Sidebar
     };
 
     console.log("[Contract Enforcer] Ready! API available at window.contractEnforcer");
@@ -282,6 +323,7 @@ async function initializeContractEnforcer() {
     console.log("  contractEnforcer.status()");
     console.log("  contractEnforcer.getContracts()");
     console.log("  contractEnforcer.refresh()");
+    console.log("  contractEnforcer.showSidebar() - Show AI panel (Ctrl+Shift+S)");
 
     // Set up URL change detection for SPA navigation
     setupUrlChangeDetection(Observer);

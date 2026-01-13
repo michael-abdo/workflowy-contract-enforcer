@@ -228,6 +228,31 @@ function injectSidebarStyles() {
       font-style: italic;
     }
 
+    /* Edit textarea for generated content */
+    .contract-sidebar-edit-textarea {
+      width: 100%;
+      min-height: 200px;
+      padding: var(--wf-space-m, 12px);
+      border: 1px solid var(--wf-highlight, rgba(110, 181, 255, 0.3));
+      border-radius: var(--wf-radius-s, 4px);
+      background: var(--wf-background-inverse-transparent, rgba(110, 181, 255, 0.08));
+      color: var(--wf-text-primary, #e0e0e0);
+      font-family: inherit;
+      font-size: var(--wf-font-size-base, 14px);
+      line-height: var(--wf-line-height-base, 1.5);
+      resize: vertical;
+    }
+
+    .contract-sidebar-edit-textarea:focus {
+      outline: none;
+      border-color: var(--wf-highlight, #6eb5ff);
+      background: var(--wf-background-inverse-transparent, rgba(110, 181, 255, 0.12));
+    }
+
+    .contract-sidebar-edit-textarea::placeholder {
+      color: var(--wf-text-helper, #666);
+    }
+
     /* Empty state */
     .contract-sidebar-empty {
       font-size: var(--wf-font-size-s, 12px);
@@ -665,9 +690,8 @@ function renderSidebarForNode(nodeName, children) {
     <div class="contract-sidebar-body">
       <div class="contract-sidebar-section proposed">
         <div class="contract-sidebar-section-header proposed">Generated Content</div>
-        <div class="contract-sidebar-tree editable" id="sidebar-proposed-tree" contenteditable="true" data-placeholder="Type or paste content here...">
-          ${sidebarState.proposedItems.length > 0 ? renderTreeItems(sidebarState.proposedItems, true) : '<div class="contract-sidebar-placeholder">AI-generated content will appear here, or type/paste your own...</div>'}
-        </div>
+        <textarea class="contract-sidebar-edit-textarea" id="sidebar-proposed-tree" placeholder="One item per line...&#10;&#10;Type here or use AI to generate content">${sidebarState.proposedItems.length > 0 ? sidebarState.proposedItems.map(item => typeof item === 'object' ? item.text : item).join('\n') : ''}</textarea>
+        <div class="contract-sidebar-edit-hint">${sidebarState.proposedItems.length} items • Edit freely, one per line</div>
       </div>
     </div>
     <div class="contract-sidebar-actions">
@@ -1020,22 +1044,13 @@ function attachEventHandlers(container) {
     approveBtn.addEventListener('click', () => handleApprove());
   }
 
-  // Editable proposed tree
-  const proposedTree = container.querySelector('#sidebar-proposed-tree');
-  if (proposedTree) {
-    proposedTree.addEventListener('input', () => handleEdit(proposedTree));
-    proposedTree.addEventListener('focus', () => {
-      sidebarState.isEditing = true;
-      // Clear placeholder on focus
-      const placeholder = proposedTree.querySelector('.contract-sidebar-placeholder');
-      if (placeholder) {
-        placeholder.remove();
-      }
-    });
-    proposedTree.addEventListener('blur', () => {
-      sidebarState.isEditing = false;
-      // Parse edited content
-      parseEditedContent(proposedTree);
+  // Editable textarea - update item count on input
+  const textarea = container.querySelector('#sidebar-proposed-tree');
+  const editHint = container.querySelector('.contract-sidebar-edit-hint');
+  if (textarea && editHint) {
+    textarea.addEventListener('input', () => {
+      const lines = textarea.value.split('\n').filter(line => line.trim());
+      editHint.textContent = `${lines.length} items • Edit freely, one per line`;
     });
   }
 
@@ -1111,26 +1126,16 @@ function parseEditedContent(treeEl) {
  * Handle approve/insert button click
  */
 function handleApprove() {
-  // First, parse the current content from the editable area
-  const proposedTree = document.querySelector('#sidebar-proposed-tree');
-  if (proposedTree) {
-    parseEditedContent(proposedTree);
-  }
+  const textarea = document.querySelector('#sidebar-proposed-tree');
+  const { currentWFItem } = sidebarState;
 
-  const { editedItems, currentWFItem } = sidebarState;
-
-  // Get items to insert from edited content
-  let itemsToInsert = editedItems;
-
-  // If no structured items, try to get text directly
-  if (itemsToInsert.length === 0 && proposedTree) {
-    const text = proposedTree.textContent.trim();
-    if (text) {
-      // Split by newlines, treating each line as an item
-      const lines = text.split('\n').filter(line => line.trim());
-      itemsToInsert = lines.map(line => ({ text: line.trim(), id: null }));
-    }
-  }
+  // Parse items from textarea (one per line)
+  const text = textarea ? textarea.value.trim() : '';
+  const itemsToInsert = text
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line)
+    .map(text => ({ text, id: null }));
 
   if (itemsToInsert.length === 0) {
     console.warn('[Sidebar] No items to insert');
@@ -1383,10 +1388,11 @@ Third item`;
  */
 async function handleAskAI() {
   const chatInput = document.querySelector('#sidebar-chat-input');
-  const proposedTree = document.querySelector('#sidebar-proposed-tree');
+  const textarea = document.querySelector('#sidebar-proposed-tree');
   const askBtn = document.querySelector('#sidebar-ask-ai-btn');
+  const editHint = document.querySelector('.contract-sidebar-edit-hint');
 
-  if (!chatInput || !proposedTree) return;
+  if (!chatInput || !textarea) return;
 
   const prompt = chatInput.value.trim();
   if (!prompt) {
@@ -1402,57 +1408,51 @@ async function handleAskAI() {
 
   // Show loading state
   sidebarState.isLoading = true;
-  if (askBtn) askBtn.disabled = true;
-  proposedTree.innerHTML = `
-    <div class="contract-sidebar-loading">
-      <div class="contract-sidebar-spinner"></div>
-      <span>Thinking...</span>
-    </div>
-  `;
+  if (askBtn) {
+    askBtn.disabled = true;
+    askBtn.innerHTML = '<span>Thinking...</span>';
+  }
+  textarea.placeholder = 'Generating...';
+  textarea.disabled = true;
 
   try {
     const response = await callOpenAI(prompt, context);
 
-    // Parse response into items (one per line)
-    const items = response
+    // Parse response into items (one per line), clean up list markers
+    const lines = response
       .split('\n')
       .map(line => line.trim())
-      .filter(line => line && !line.startsWith('-') && !line.match(/^\d+\./))
-      .map(text => ({ text, id: null }));
+      .filter(line => line)
+      .map(line => line.replace(/^[-•*]\s*/, '').replace(/^\d+\.\s*/, ''));
 
-    // Clean up any remaining list markers
-    const cleanedItems = items.map(item => ({
-      ...item,
-      text: item.text.replace(/^[-•*]\s*/, '').replace(/^\d+\.\s*/, '')
-    }));
+    sidebarState.proposedItems = lines.map(text => ({ text, id: null }));
 
-    sidebarState.proposedItems = cleanedItems;
-    sidebarState.editedItems = [...cleanedItems];
+    // Put items in textarea (one per line)
+    textarea.value = lines.join('\n');
 
-    // Render items
-    if (cleanedItems.length > 0) {
-      proposedTree.innerHTML = renderTreeItems(cleanedItems, true);
-    } else {
-      proposedTree.innerHTML = '<div class="contract-sidebar-placeholder">No items generated</div>';
+    // Update hint
+    if (editHint) {
+      editHint.textContent = `${lines.length} items • Edit freely, one per line`;
     }
 
-    console.log('[Sidebar] AI generated', cleanedItems.length, 'items');
+    console.log('[Sidebar] AI generated', lines.length, 'items');
 
   } catch (e) {
     console.error('[Sidebar] AI error:', e);
-    proposedTree.innerHTML = `
-      <div class="contract-sidebar-error">
-        ${escapeHtml(e.message)}
-      </div>
-      <div class="contract-sidebar-placeholder">Type or paste content to add as children...</div>
-    `;
+    textarea.value = '';
+    textarea.placeholder = `Error: ${e.message}\n\nType or paste content here...`;
 
     if (window.ContractUI) {
       window.ContractUI.showError('AI Error', e.message);
     }
   } finally {
     sidebarState.isLoading = false;
-    if (askBtn) askBtn.disabled = false;
+    textarea.disabled = false;
+    textarea.placeholder = 'One item per line...\n\nType here or use AI to generate content';
+    if (askBtn) {
+      askBtn.disabled = false;
+      askBtn.innerHTML = '<span>Generate</span>';
+    }
   }
 }
 

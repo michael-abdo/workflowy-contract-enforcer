@@ -1123,6 +1123,36 @@ function parseEditedContent(treeEl) {
 }
 
 /**
+ * Build context string from all visible/expanded nodes
+ * @param {Object} item - WF item to start from
+ * @param {number} indent - Current indentation level
+ * @returns {string} WorkFlowy-format text of visible tree
+ */
+function buildVisibleContext(item, indent = 0) {
+  if (!item) return '';
+
+  const lines = [];
+  const prefix = '  '.repeat(indent);
+  const name = item.getNameInPlainText ? item.getNameInPlainText() : '';
+
+  // Add this item (skip root if it has no name)
+  if (name || indent > 0) {
+    lines.push(`${prefix}- ${name}`);
+  }
+
+  // Recursively add children if this node is expanded
+  const isExpanded = item.isExpanded ? item.isExpanded() : true;
+  if (isExpanded) {
+    const children = item.getChildren ? item.getChildren() : [];
+    for (const child of children) {
+      lines.push(buildVisibleContext(child, name ? indent + 1 : indent));
+    }
+  }
+
+  return lines.filter(line => line.trim()).join('\n');
+}
+
+/**
  * Parse WorkFlowy format text into a tree structure
  * @param {string} text - Text in WorkFlowy format (- item with 2-space indents)
  * @returns {Array} Tree structure [{text, children: [...]}]
@@ -1497,9 +1527,10 @@ async function handleAskAI() {
     return;
   }
 
-  // Get current node context
+  // Get current node context (all visible/expanded nodes)
   const currentItem = getCurrentItem();
-  const context = currentItem ? currentItem.getNameInPlainText() : '';
+  const context = currentItem ? buildVisibleContext(currentItem) : '';
+  console.log('[Sidebar] Context for AI:', context.split('\n').length, 'lines');
 
   // Show loading state
   sidebarState.isLoading = true;

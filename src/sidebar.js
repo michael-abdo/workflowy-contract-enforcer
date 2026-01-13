@@ -18,6 +18,108 @@ const SIDEBAR_TOGGLE_ID = 'contract-sidebar-toggle';
 const OPENAI_MODEL = 'gpt-4o-mini';
 const OPENAI_API_KEY_STORAGE = 'contract_enforcer_openai_key';
 
+// Saved prompt templates
+const SAVED_PROMPTS = [
+  {
+    id: 'custom',
+    name: 'Custom Prompt',
+    systemPrompt: null  // Uses default system prompt
+  },
+  {
+    id: 'contract-converter',
+    name: 'Contract Converter',
+    systemPrompt: `You are a contract structuring assistant for WorkFlowy. Your job is to convert raw braindumps into properly structured, disambiguous, non-overlapping contracts.
+
+## What is a Contract?
+A contract is a managed idea marked with #contract tag. It transforms freeform thoughts into executable, verifiable commitments.
+
+## Contract Structure (7 Required Fields)
+Each contract has these child nodes:
+
+1. **Intent** - Single sentence answering "What must be true if this succeeds?"
+   - Must be falsifiable (can be proven true/false)
+   - Must be specific (not vague)
+   - Format: Single child node with the statement
+
+2. **Stakeholders** - Who accepts/rejects the outcome
+   - People or roles who care about completion
+   - Format: Bullet list of names/roles
+
+3. **Owner** - Who does the work
+   - Single person or team responsible
+   - Format: Single child node
+
+4. **System Reference** - Where does the change apply?
+   - Exact location: repo/path, doc + section, URL
+   - Must be precise enough to locate
+   - Format: URL or path as child node
+
+5. **QA Document** - How will success be verified?
+   - Link to test plan, checklist, or criteria
+   - Format: URL or path as child node
+
+6. **Update Set** - What specific changes will be made?
+   - Concrete deltas/actions
+   - Format: Bullet list of changes
+
+7. **QA Results** - Evidence of completion
+   - Links to test results, screenshots, approvals
+   - Format: Bullet list with evidence links
+
+## Output Rules
+1. Each distinct goal = separate contract
+2. No overlapping scope between contracts
+3. Use WorkFlowy format with proper indentation
+4. Include #contract tag on parent node
+5. If input is ambiguous, create multiple focused contracts rather than one vague one
+
+## Output Format
+- Goal Name #contract
+  - Intent
+    - [Falsifiable statement of success]
+  - Stakeholders
+    - [Person/role 1]
+    - [Person/role 2]
+  - Owner
+    - [Responsible person/team]
+  - System Reference
+    - [Exact location/path/URL]
+  - QA Document
+    - [Link to test criteria]
+  - Update Set
+    - [Change 1]
+    - [Change 2]
+  - QA Results
+    - [Leave empty - filled after completion]
+
+Convert the user's input into properly structured contracts. Create as many separate contracts as needed to avoid overlap.`
+  },
+  {
+    id: 'brainstorm',
+    name: 'Brainstorm Ideas',
+    systemPrompt: `You are a brainstorming assistant. Generate creative, diverse ideas related to the user's topic.
+
+Rules:
+- Generate 5-10 distinct ideas
+- Each idea should be actionable
+- Include both obvious and unconventional approaches
+- Use WorkFlowy format (- item with 2-space indents for sub-points)
+- Group related ideas under themes if helpful`
+  },
+  {
+    id: 'breakdown',
+    name: 'Break Down Task',
+    systemPrompt: `You are a task breakdown assistant. Take the user's task and break it into atomic, actionable subtasks.
+
+Rules:
+- Each subtask should be completable in one session
+- Order tasks by dependency (blockers first)
+- Include verification steps where appropriate
+- Use WorkFlowy format with proper nesting
+- Aim for 3-7 subtasks per main task`
+  }
+];
+
 // Sidebar state
 let sidebarState = {
   isVisible: false,
@@ -374,6 +476,38 @@ function injectSidebarStyles() {
       transform: rotate(180deg);
     }
 
+    /* Prompt dropdown */
+    .contract-sidebar-prompt-select {
+      width: 100%;
+      padding: var(--wf-space-s, 8px);
+      border: 1px solid var(--wf-border-default, #444);
+      border-radius: var(--wf-radius-s, 4px);
+      background: var(--wf-background, #1e1e1e);
+      color: var(--wf-text-primary, #e0e0e0);
+      font-family: inherit;
+      font-size: var(--wf-font-size-s, 12px);
+      cursor: pointer;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 20 20' fill='%23888'%3E%3Cpath fill-rule='evenodd' d='M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z' clip-rule='evenodd'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 8px center;
+      padding-right: 28px;
+    }
+
+    .contract-sidebar-prompt-select:focus {
+      outline: none;
+      border-color: var(--wf-highlight, #6eb5ff);
+    }
+
+    .contract-sidebar-prompt-select:hover {
+      border-color: var(--wf-highlight, #6eb5ff);
+    }
+
+    .contract-sidebar-prompt-select option {
+      background: var(--wf-background, #1e1e1e);
+      color: var(--wf-text-primary, #e0e0e0);
+    }
+
     /* AI Chatbox */
     .contract-sidebar-chatbox {
       display: flex;
@@ -675,6 +809,9 @@ function renderSidebarForNode(nodeName, children) {
     </div>
     <div class="contract-sidebar-chatbox">
       <div class="contract-sidebar-chatbox-label">Ask AI</div>
+      <select class="contract-sidebar-prompt-select" id="sidebar-prompt-select">
+        ${SAVED_PROMPTS.map(p => `<option value="${p.id}">${p.name}</option>`).join('')}
+      </select>
       <textarea class="contract-sidebar-chatbox-input" id="sidebar-chat-input" placeholder="What would you like to add? (e.g., 'Break this into subtasks' or 'Add pros and cons')"></textarea>
       <div class="contract-sidebar-chatbox-actions">
         <button class="contract-sidebar-btn-ai" id="sidebar-ask-ai-btn">
@@ -1417,9 +1554,10 @@ function showApiKeyModal() {
  * Call OpenAI API
  * @param {string} prompt - User prompt
  * @param {string} context - Page context
+ * @param {string|null} customSystemPrompt - Optional custom system prompt template
  * @returns {Promise<string>}
  */
-async function callOpenAI(prompt, context) {
+async function callOpenAI(prompt, context, customSystemPrompt = null) {
   let apiKey = await getApiKey();
 
   if (!apiKey) {
@@ -1431,7 +1569,22 @@ async function callOpenAI(prompt, context) {
 
   const requestId = Date.now().toString();
 
-  const systemPrompt = `You are a helpful assistant that generates structured content for WorkFlowy, an outliner app.
+  // Use custom template if provided, otherwise default
+  const systemPrompt = customSystemPrompt
+    ? `${customSystemPrompt}
+
+Current WorkFlowy context (visible/expanded nodes):
+"""
+${context}
+"""
+
+IMPORTANT OUTPUT FORMAT: Return as a plain text list using WorkFlowy format:
+- Parent item
+  - Child item (2 space indent)
+    - Grandchild item (4 space indent)
+
+Rules: Use "- " prefix, 2 spaces per indent level, [Link Text](url) for hyperlinks.`
+    : `You are a helpful assistant that generates structured content for WorkFlowy, an outliner app.
 
 The user is currently viewing a node with this content:
 """
@@ -1516,6 +1669,7 @@ async function handleAskAI() {
   const textarea = document.querySelector('#sidebar-proposed-tree');
   const askBtn = document.querySelector('#sidebar-ask-ai-btn');
   const editHint = document.querySelector('.contract-sidebar-edit-hint');
+  const promptSelect = document.querySelector('#sidebar-prompt-select');
 
   if (!chatInput || !textarea) return;
 
@@ -1526,6 +1680,11 @@ async function handleAskAI() {
     }
     return;
   }
+
+  // Get selected prompt template
+  const selectedPromptId = promptSelect ? promptSelect.value : 'custom';
+  const selectedPrompt = SAVED_PROMPTS.find(p => p.id === selectedPromptId);
+  console.log('[Sidebar] Using prompt template:', selectedPromptId);
 
   // Get current node context (all visible/expanded nodes)
   const currentItem = getCurrentItem();
@@ -1542,7 +1701,7 @@ async function handleAskAI() {
   textarea.disabled = true;
 
   try {
-    const response = await callOpenAI(prompt, context);
+    const response = await callOpenAI(prompt, context, selectedPrompt?.systemPrompt);
 
     // Keep the WorkFlowy format intact (preserve dashes and indentation)
     const lines = response.split('\n').filter(line => line.trim());

@@ -567,6 +567,13 @@ function injectStyles() {
     .contract-suggestion-tree-node.search-hidden {
       display: none;
     }
+
+    /* Completed/crossed-off items */
+    .contract-suggestion-tree-text.completed,
+    .contract-suggestion-value.completed {
+      text-decoration: line-through;
+      opacity: 0.6;
+    }
   `;
 
   document.head.appendChild(styles);
@@ -1056,6 +1063,18 @@ function renderTreeNode(node, depth = 0) {
   textEl.className = 'contract-suggestion-tree-text';
   textEl.textContent = node.text;
   textEl.title = node.text; // Show full text on hover
+
+  // Check if item is completed (crossed off) in WorkFlowy
+  if (node.id && typeof WF !== 'undefined') {
+    try {
+      const wfItem = WF.getItemById(node.id);
+      if (wfItem && wfItem.isCompleted()) {
+        textEl.classList.add('completed');
+      }
+    } catch (e) {
+      // Ignore - item may not exist or WF not available
+    }
+  }
   rowEl.appendChild(textEl);
 
   // Click on row to toggle selection
@@ -1299,11 +1318,26 @@ function showSuggestion(idea, field, suggestion) {
     items.forEach((item, index) => {
       const num = index + 1;
       const displayText = typeof item === 'object' ? item.text : item;
+      const itemId = typeof item === 'object' ? item.id : null;
+
+      // Check if item is completed in WorkFlowy
+      let completedClass = '';
+      if (itemId && typeof WF !== 'undefined') {
+        try {
+          const wfItem = WF.getItemById(itemId);
+          if (wfItem && wfItem.isCompleted()) {
+            completedClass = ' completed';
+          }
+        } catch (e) {
+          // Ignore - item may not exist
+        }
+      }
+
       itemsHtml += `
         <div class="contract-suggestion-item" data-index="${index}">
           <input type="checkbox" class="contract-suggestion-checkbox" />
           <span class="contract-suggestion-key">Ctrl+${num}</span>
-          <span class="contract-suggestion-value">${escapeHtml(displayText)}</span>
+          <span class="contract-suggestion-value${completedClass}">${escapeHtml(displayText)}</span>
         </div>
       `;
     });

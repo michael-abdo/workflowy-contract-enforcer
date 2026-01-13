@@ -228,6 +228,19 @@ function injectSidebarStyles() {
       padding: var(--wf-space-m, 12px);
     }
 
+    /* Placeholder text */
+    .contract-sidebar-placeholder {
+      font-size: var(--wf-font-size-s, 12px);
+      color: var(--wf-text-helper, #555);
+      font-style: italic;
+    }
+
+    .contract-sidebar-tree.editable:empty::before {
+      content: attr(data-placeholder);
+      color: var(--wf-text-helper, #555);
+      font-style: italic;
+    }
+
     /* Actions bar */
     .contract-sidebar-actions {
       display: flex;
@@ -334,6 +347,9 @@ function injectSidebarStyles() {
 
   // Also create the toggle button
   createToggleButton();
+
+  // Set up URL change detection
+  setupUrlChangeDetection();
 }
 
 /**
@@ -367,27 +383,110 @@ function createToggleButton() {
 }
 
 /**
- * Show sidebar with current contract context (if available)
+ * Show sidebar with current node context (any node, not just contracts)
  */
 function showWithCurrentContext() {
-  // Try to get from current focused contract
-  if (window.ContractParser && window.ContractObserver && window.ContractIntegrity) {
-    const focused = window.ContractParser.getFocusedItem();
-    if (focused) {
-      const idea = window.ContractObserver.getIdea(focused.data.id);
-      if (idea) {
-        const validation = window.ContractIntegrity.validate_idea(
-          window.ContractObserver.ideaStore,
-          idea
-        );
-        const suggestion = window.ContractIntegrity.get_field_suggestion(validation.next_field, idea);
-        show(idea, validation.next_field, suggestion);
-        return;
-      }
-    }
+  // Get the currently focused/zoomed item in WorkFlowy
+  const currentItem = getCurrentItem();
+
+  if (currentItem) {
+    const itemName = currentItem.getNameInPlainText() || 'Untitled';
+    const itemId = currentItem.getId();
+    const children = currentItem.getChildren() || [];
+
+    // Build items from children
+    const childItems = children.map(child => ({
+      text: child.getNameInPlainText(),
+      id: child.getId()
+    }));
+
+    // Update state
+    sidebarState = {
+      isVisible: true,
+      currentIdea: { title: itemName, id: itemId },
+      currentField: 'children',
+      currentItems: childItems,
+      proposedItems: [],  // Empty until AI provides suggestions
+      editedItems: [],
+      isEditing: false,
+      currentWFItem: currentItem  // Store reference to WF item
+    };
+
+    const container = getSidebarContainer();
+    container.innerHTML = renderSidebarForNode(itemName, childItems);
+    container.classList.add('visible');
+    document.body.classList.add('contract-sidebar-open');
+
+    // Attach event handlers
+    attachEventHandlers(container);
+    console.log('[Sidebar] Showing for node:', itemName);
+    return;
   }
 
-  // No context available - show empty sidebar with message
+  // No node available - show empty sidebar
+  showEmptySidebar();
+}
+
+/**
+ * Get the current WorkFlowy item (zoomed or focused)
+ * @returns {Object|null} WorkFlowy item or null
+ */
+function getCurrentItem() {
+  if (typeof WF === 'undefined') return null;
+
+  try {
+    // First try to get the currently zoomed item
+    const currentItem = WF.currentItem();
+    if (currentItem) return currentItem;
+
+    // Fallback to root
+    return WF.rootItem();
+  } catch (e) {
+    console.error('[Sidebar] Error getting current item:', e);
+    return null;
+  }
+}
+
+/**
+ * Render sidebar HTML for a generic node (not contract-specific)
+ * @param {string} nodeName - Name of the current node
+ * @param {Array} children - Current children of the node
+ * @returns {string} HTML string
+ */
+function renderSidebarForNode(nodeName, children) {
+  const hasChildren = children && children.length > 0;
+
+  return `
+    <div class="contract-sidebar-header">
+      <div>
+        <h3 class="contract-sidebar-title">${escapeHtml(nodeName)}</h3>
+        <div class="contract-sidebar-field">${hasChildren ? children.length + ' children' : 'No children'}</div>
+      </div>
+      <button class="contract-sidebar-close" title="Close sidebar">
+        <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/>
+        </svg>
+      </button>
+    </div>
+    <div class="contract-sidebar-body">
+      <div class="contract-sidebar-section proposed">
+        <div class="contract-sidebar-section-header proposed">Add Content</div>
+        <div class="contract-sidebar-tree editable" id="sidebar-proposed-tree" contenteditable="true" data-placeholder="Type or paste content here...">
+          ${sidebarState.proposedItems.length > 0 ? renderTreeItems(sidebarState.proposedItems, true) : '<div class="contract-sidebar-placeholder">Type or paste content to add as children...</div>'}
+        </div>
+      </div>
+    </div>
+    <div class="contract-sidebar-actions">
+      <button class="contract-sidebar-btn contract-sidebar-btn-cancel">Cancel</button>
+      <button class="contract-sidebar-btn contract-sidebar-btn-approve">Insert</button>
+    </div>
+  `;
+}
+
+/**
+ * Show empty sidebar when no node context available
+ */
+function showEmptySidebar() {
   sidebarState = {
     isVisible: true,
     currentIdea: null,
@@ -395,7 +494,8 @@ function showWithCurrentContext() {
     currentItems: [],
     proposedItems: [],
     editedItems: [],
-    isEditing: false
+    isEditing: false,
+    currentWFItem: null
   };
 
   const container = getSidebarContainer();
@@ -403,7 +503,7 @@ function showWithCurrentContext() {
     <div class="contract-sidebar-header">
       <div>
         <h3 class="contract-sidebar-title">AI Panel</h3>
-        <div class="contract-sidebar-field">No contract selected</div>
+        <div class="contract-sidebar-field">Navigate to a node</div>
       </div>
       <button class="contract-sidebar-close" title="Close sidebar">
         <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
@@ -413,7 +513,7 @@ function showWithCurrentContext() {
     </div>
     <div class="contract-sidebar-body">
       <div class="contract-sidebar-empty">
-        Select a contract node (#contract) to see suggestions here.
+        Zoom into a node to add content here.
       </div>
     </div>
   `;
@@ -425,6 +525,40 @@ function showWithCurrentContext() {
   if (closeBtn) {
     closeBtn.addEventListener('click', () => hide());
   }
+}
+
+/**
+ * Update sidebar when URL changes (navigation)
+ */
+function onUrlChange() {
+  if (sidebarState.isVisible) {
+    // Refresh the sidebar with new context
+    console.log('[Sidebar] URL changed, refreshing...');
+    showWithCurrentContext();
+  }
+}
+
+/**
+ * Set up URL change detection
+ */
+function setupUrlChangeDetection() {
+  let lastHash = window.location.hash;
+
+  // Check for hash changes periodically (WorkFlowy uses hash navigation)
+  setInterval(() => {
+    const currentHash = window.location.hash;
+    if (currentHash !== lastHash) {
+      lastHash = currentHash;
+      onUrlChange();
+    }
+  }, 300);
+
+  // Also listen for popstate
+  window.addEventListener('popstate', () => {
+    setTimeout(onUrlChange, 100);
+  });
+
+  console.log('[Sidebar] URL change detection active');
 }
 
 /**
@@ -752,46 +886,69 @@ function parseEditedContent(treeEl) {
 }
 
 /**
- * Handle approve button click
+ * Handle approve/insert button click
  */
 function handleApprove() {
-  const { currentIdea, currentField, editedItems, proposedItems } = sidebarState;
-
-  if (!currentIdea || !currentField) {
-    console.warn('[Sidebar] No idea or field to approve');
-    return;
+  // First, parse the current content from the editable area
+  const proposedTree = document.querySelector('#sidebar-proposed-tree');
+  if (proposedTree) {
+    parseEditedContent(proposedTree);
   }
 
-  // Use edited items if available, otherwise proposed
-  const itemsToInsert = editedItems.length > 0 ? editedItems : proposedItems;
+  const { editedItems, currentWFItem } = sidebarState;
+
+  // Get items to insert from edited content
+  let itemsToInsert = editedItems;
+
+  // If no structured items, try to get text directly
+  if (itemsToInsert.length === 0 && proposedTree) {
+    const text = proposedTree.textContent.trim();
+    if (text) {
+      // Split by newlines, treating each line as an item
+      const lines = text.split('\n').filter(line => line.trim());
+      itemsToInsert = lines.map(line => ({ text: line.trim(), id: null }));
+    }
+  }
 
   if (itemsToInsert.length === 0) {
     console.warn('[Sidebar] No items to insert');
+    if (window.ContractUI) {
+      window.ContractUI.showWarning('Nothing to Insert', 'Enter some content first');
+    }
     return;
   }
 
-  console.log('[Sidebar] Approving', itemsToInsert.length, 'items for', currentField);
+  // Get the target node - either stored reference or current item
+  const targetItem = currentWFItem || getCurrentItem();
 
-  // Use the existing createOrUpdateField from suggestions module
-  if (window.ContractSuggestions?.createOrUpdateField) {
-    const success = window.ContractSuggestions.createOrUpdateField(
-      currentIdea,
-      currentField,
-      itemsToInsert
-    );
-
-    if (success) {
-      hide();
-      if (window.ContractUI) {
-        window.ContractUI.showSuccess('Changes Applied', `${formatFieldName(currentField)}: ${itemsToInsert.length} items inserted`);
-      }
-    } else {
-      if (window.ContractUI) {
-        window.ContractUI.showError('Failed to Apply', 'Could not insert items');
-      }
+  if (!targetItem) {
+    console.error('[Sidebar] No target node available');
+    if (window.ContractUI) {
+      window.ContractUI.showError('Error', 'No target node found');
     }
-  } else {
-    console.error('[Sidebar] ContractSuggestions.createOrUpdateField not available');
+    return;
+  }
+
+  console.log('[Sidebar] Inserting', itemsToInsert.length, 'items into', targetItem.getNameInPlainText());
+
+  // Insert items using WF API
+  try {
+    WF.editGroup(() => {
+      itemsToInsert.forEach(item => {
+        const newItem = WF.createItem(targetItem, 0); // Insert at end
+        WF.setItemName(newItem, item.text);
+      });
+    });
+
+    hide();
+    if (window.ContractUI) {
+      window.ContractUI.showSuccess('Inserted', `${itemsToInsert.length} item${itemsToInsert.length === 1 ? '' : 's'} added`);
+    }
+  } catch (e) {
+    console.error('[Sidebar] Error inserting items:', e);
+    if (window.ContractUI) {
+      window.ContractUI.showError('Insert Failed', e.message);
+    }
   }
 }
 

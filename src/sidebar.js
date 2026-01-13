@@ -136,10 +136,6 @@ function injectSidebarStyles() {
       border-bottom: 1px solid var(--wf-border-default, #333);
     }
 
-    .contract-sidebar-section-header.current {
-      color: var(--wf-text-helper, #888);
-    }
-
     .contract-sidebar-section-header.proposed {
       color: var(--wf-highlight, #6eb5ff);
     }
@@ -468,18 +464,12 @@ function renderSidebarHTML() {
       </button>
     </div>
     <div class="contract-sidebar-body">
-      <div class="contract-sidebar-section current">
-        <div class="contract-sidebar-section-header current">Current</div>
-        <div class="contract-sidebar-tree" id="sidebar-current-tree">
-          ${renderTreeItems(sidebarState.currentItems, false)}
-        </div>
-      </div>
       <div class="contract-sidebar-section proposed">
-        <div class="contract-sidebar-section-header proposed">Proposed</div>
+        <div class="contract-sidebar-section-header proposed">Suggested Content</div>
         <div class="contract-sidebar-tree editable" id="sidebar-proposed-tree" contenteditable="true">
           ${renderTreeItems(sidebarState.proposedItems, true)}
         </div>
-        <div class="contract-sidebar-edit-hint">Click to edit proposed content</div>
+        <div class="contract-sidebar-edit-hint">Click to edit before approving</div>
       </div>
     </div>
     <div class="contract-sidebar-actions">

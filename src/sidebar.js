@@ -690,8 +690,8 @@ function renderSidebarForNode(nodeName, children) {
     <div class="contract-sidebar-body">
       <div class="contract-sidebar-section proposed">
         <div class="contract-sidebar-section-header proposed">Generated Content</div>
-        <textarea class="contract-sidebar-edit-textarea" id="sidebar-proposed-tree" placeholder="One item per line...&#10;&#10;Type here or use AI to generate content">${sidebarState.proposedItems.length > 0 ? sidebarState.proposedItems.map(item => typeof item === 'object' ? item.text : item).join('\n') : ''}</textarea>
-        <div class="contract-sidebar-edit-hint">${sidebarState.proposedItems.length} items • Edit freely, one per line</div>
+        <textarea class="contract-sidebar-edit-textarea" id="sidebar-proposed-tree" placeholder="- Item 1&#10;  - Sub-item&#10;    - Nested item&#10;- Item 2&#10;&#10;WorkFlowy format: dash + 2-space indents">${sidebarState.proposedItems.length > 0 ? sidebarState.proposedItems.map(item => typeof item === 'object' ? item.text : item).join('\n') : ''}</textarea>
+        <div class="contract-sidebar-edit-hint">0 items • WorkFlowy format with nested support</div>
       </div>
     </div>
     <div class="contract-sidebar-actions">
@@ -1123,21 +1123,83 @@ function parseEditedContent(treeEl) {
 }
 
 /**
+ * Parse WorkFlowy format text into a tree structure
+ * @param {string} text - Text in WorkFlowy format (- item with 2-space indents)
+ * @returns {Array} Tree structure [{text, children: [...]}]
+ */
+function parseWorkflowyFormat(text) {
+  const lines = text.split('\n').filter(line => line.trim());
+  const root = { children: [] };
+  const stack = [{ node: root, indent: -1 }];
+
+  for (const line of lines) {
+    // Count leading spaces
+    const match = line.match(/^(\s*)-\s*(.*)/);
+    if (!match) continue;
+
+    const indent = match[1].length;
+    const content = match[2].trim();
+
+    if (!content) continue;
+
+    const newNode = { text: content, children: [] };
+
+    // Find parent (last item with smaller indent)
+    while (stack.length > 1 && stack[stack.length - 1].indent >= indent) {
+      stack.pop();
+    }
+
+    // Add to parent's children
+    stack[stack.length - 1].node.children.push(newNode);
+
+    // Push onto stack for potential children
+    stack.push({ node: newNode, indent });
+  }
+
+  return root.children;
+}
+
+/**
+ * Recursively insert tree items into WorkFlowy
+ * @param {Object} parent - WF parent item
+ * @param {Array} items - Array of {text, children} items
+ */
+function insertTreeItems(parent, items) {
+  items.forEach(item => {
+    const newItem = WF.createItem(parent, 0); // 0 = insert at end
+    WF.setItemName(newItem, item.text);
+
+    if (item.children && item.children.length > 0) {
+      insertTreeItems(newItem, item.children);
+    }
+  });
+}
+
+/**
+ * Count total items in tree (including nested)
+ * @param {Array} items
+ * @returns {number}
+ */
+function countTreeItems(items) {
+  let count = 0;
+  for (const item of items) {
+    count++;
+    if (item.children) {
+      count += countTreeItems(item.children);
+    }
+  }
+  return count;
+}
+
+/**
  * Handle approve/insert button click
  */
 function handleApprove() {
   const textarea = document.querySelector('#sidebar-proposed-tree');
   const { currentWFItem } = sidebarState;
 
-  // Parse items from textarea (one per line)
   const text = textarea ? textarea.value.trim() : '';
-  const itemsToInsert = text
-    .split('\n')
-    .map(line => line.trim())
-    .filter(line => line)
-    .map(text => ({ text, id: null }));
-
-  if (itemsToInsert.length === 0) {
+  if (!text) {
     console.warn('[Sidebar] No items to insert');
     if (window.ContractUI) {
       window.ContractUI.showWarning('Nothing to Insert', 'Enter some content first');
@@ -1145,7 +1207,27 @@ function handleApprove() {
     return;
   }
 
-  // Get the target node - either stored reference or current item
+  // Parse WorkFlowy format into tree structure
+  const tree = parseWorkflowyFormat(text);
+
+  if (tree.length === 0) {
+    // Fallback: treat as plain text (one item per line)
+    const lines = text.split('\n').filter(line => line.trim());
+    lines.forEach(line => {
+      tree.push({ text: line.replace(/^[-•*]\s*/, '').trim(), children: [] });
+    });
+  }
+
+  const totalItems = countTreeItems(tree);
+
+  if (totalItems === 0) {
+    if (window.ContractUI) {
+      window.ContractUI.showWarning('Nothing to Insert', 'Enter some content first');
+    }
+    return;
+  }
+
+  // Get the target node
   const targetItem = currentWFItem || getCurrentItem();
 
   if (!targetItem) {
@@ -1156,20 +1238,17 @@ function handleApprove() {
     return;
   }
 
-  console.log('[Sidebar] Inserting', itemsToInsert.length, 'items into', targetItem.getNameInPlainText());
+  console.log('[Sidebar] Inserting', totalItems, 'items (tree) into', targetItem.getNameInPlainText());
 
   // Insert items using WF API
   try {
     WF.editGroup(() => {
-      itemsToInsert.forEach(item => {
-        const newItem = WF.createItem(targetItem, 0); // Insert at end
-        WF.setItemName(newItem, item.text);
-      });
+      insertTreeItems(targetItem, tree);
     });
 
     hide();
     if (window.ContractUI) {
-      window.ContractUI.showSuccess('Inserted', `${itemsToInsert.length} item${itemsToInsert.length === 1 ? '' : 's'} added`);
+      window.ContractUI.showSuccess('Inserted', `${totalItems} item${totalItems === 1 ? '' : 's'} added`);
     }
   } catch (e) {
     console.error('[Sidebar] Error inserting items:', e);
@@ -1322,21 +1401,37 @@ async function callOpenAI(prompt, context) {
 
   const requestId = Date.now().toString();
 
-  const systemPrompt = `You are a helpful assistant that generates structured content for a note-taking app called WorkFlowy.
+  const systemPrompt = `You are a helpful assistant that generates structured content for WorkFlowy, an outliner app.
 
 The user is currently viewing a node with this content:
 """
 ${context}
 """
 
-Based on the user's request, generate a list of items to add as children to this node.
+Based on the user's request, generate a hierarchical list of items to add as children to this node.
 
-IMPORTANT: Return ONLY a simple list with one item per line. No bullet points, no numbering, no markdown. Just plain text, one item per line.
+IMPORTANT: Return as a plain text list that can be directly imported into WorkFlowy. Use exactly this format:
+- Parent item
+  - Child item (2 space indent)
+    - Grandchild item (4 space indent)
+      - Great-grandchild (6 space indent)
 
-Example response format:
-First item
-Second item
-Third item`;
+Rules:
+1. Every line starts with "- " (dash space)
+2. Use 2 spaces per indent level
+3. Only indent as deep as the content actually requires
+4. For hyperlinks, use this format: [Link Text](https://url.com)
+5. No numbering, no bullet variations, just "- "
+
+Example:
+- Research phase
+  - Gather requirements
+    - Interview stakeholders
+    - Review existing docs
+  - Analyze competitors
+- Development phase
+  - Design system architecture
+  - Implement core features`;
 
   return new Promise((resolve, reject) => {
     const handler = (event) => {
@@ -1418,24 +1513,19 @@ async function handleAskAI() {
   try {
     const response = await callOpenAI(prompt, context);
 
-    // Parse response into items (one per line), clean up list markers
-    const lines = response
-      .split('\n')
-      .map(line => line.trim())
-      .filter(line => line)
-      .map(line => line.replace(/^[-•*]\s*/, '').replace(/^\d+\.\s*/, ''));
+    // Keep the WorkFlowy format intact (preserve dashes and indentation)
+    const lines = response.split('\n').filter(line => line.trim());
+    const itemCount = lines.filter(line => line.trim().startsWith('-')).length;
 
-    sidebarState.proposedItems = lines.map(text => ({ text, id: null }));
-
-    // Put items in textarea (one per line)
-    textarea.value = lines.join('\n');
+    // Put response directly in textarea (preserving format)
+    textarea.value = response.trim();
 
     // Update hint
     if (editHint) {
-      editHint.textContent = `${lines.length} items • Edit freely, one per line`;
+      editHint.textContent = `${itemCount} items • WorkFlowy format (copy/paste or Insert)`;
     }
 
-    console.log('[Sidebar] AI generated', lines.length, 'items');
+    console.log('[Sidebar] AI generated', itemCount, 'items');
 
   } catch (e) {
     console.error('[Sidebar] AI error:', e);
@@ -1448,7 +1538,7 @@ async function handleAskAI() {
   } finally {
     sidebarState.isLoading = false;
     textarea.disabled = false;
-    textarea.placeholder = 'One item per line...\n\nType here or use AI to generate content';
+    textarea.placeholder = '- Item 1\n  - Sub-item\n- Item 2\n\nWorkFlowy format with 2-space indents';
     if (askBtn) {
       askBtn.disabled = false;
       askBtn.innerHTML = '<span>Generate</span>';

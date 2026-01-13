@@ -14,6 +14,7 @@ console.log('[Contract Sidebar] Script loading...');
 // Constants
 const SIDEBAR_CONTAINER_ID = 'contract-sidebar-container';
 const SIDEBAR_STYLES_ID = 'contract-sidebar-styles';
+const SIDEBAR_TOGGLE_ID = 'contract-sidebar-toggle';
 
 // Sidebar state
 let sidebarState = {
@@ -291,10 +292,143 @@ function injectSidebarStyles() {
       text-decoration: line-through;
       border-radius: 2px;
     }
+
+    /* Toggle button on right edge */
+    #${SIDEBAR_TOGGLE_ID} {
+      position: fixed;
+      top: 50%;
+      right: 0;
+      transform: translateY(-50%);
+      width: 24px;
+      height: 48px;
+      background: var(--wf-background-secondary, #252525);
+      border: 1px solid var(--wf-border-default, #333);
+      border-right: none;
+      border-radius: 6px 0 0 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 999991;
+      transition: background 0.15s, width 0.15s;
+      color: var(--wf-icon-tertiary, #888);
+    }
+
+    #${SIDEBAR_TOGGLE_ID}:hover {
+      background: var(--wf-background-inverse-transparent, rgba(255,255,255,0.1));
+      color: var(--wf-text-primary, #e0e0e0);
+      width: 28px;
+    }
+
+    #${SIDEBAR_TOGGLE_ID} svg {
+      transition: transform 0.25s ease-out;
+    }
+
+    body.contract-sidebar-open #${SIDEBAR_TOGGLE_ID} {
+      right: 380px;
+    }
+
+    body.contract-sidebar-open #${SIDEBAR_TOGGLE_ID} svg {
+      transform: rotate(180deg);
+    }
   `;
 
   document.head.appendChild(styles);
   console.log('[Sidebar] Styles injected');
+
+  // Also create the toggle button
+  createToggleButton();
+}
+
+/**
+ * Create and inject the toggle button
+ */
+function createToggleButton() {
+  if (document.getElementById(SIDEBAR_TOGGLE_ID)) {
+    return; // Already exists
+  }
+
+  const toggle = document.createElement('button');
+  toggle.id = SIDEBAR_TOGGLE_ID;
+  toggle.title = 'Toggle AI Panel';
+  toggle.innerHTML = `
+    <svg width="12" height="12" viewBox="0 0 20 20" fill="currentColor">
+      <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"/>
+    </svg>
+  `;
+
+  toggle.addEventListener('click', () => {
+    if (sidebarState.isVisible) {
+      hide();
+    } else {
+      // Try to show with current contract context
+      showWithCurrentContext();
+    }
+  });
+
+  document.body.appendChild(toggle);
+  console.log('[Sidebar] Toggle button created');
+}
+
+/**
+ * Show sidebar with current contract context (if available)
+ */
+function showWithCurrentContext() {
+  // Try to get from current focused contract
+  if (window.ContractParser && window.ContractObserver && window.ContractIntegrity) {
+    const focused = window.ContractParser.getFocusedItem();
+    if (focused) {
+      const idea = window.ContractObserver.getIdea(focused.data.id);
+      if (idea) {
+        const validation = window.ContractIntegrity.validate_idea(
+          window.ContractObserver.ideaStore,
+          idea
+        );
+        const suggestion = window.ContractIntegrity.get_field_suggestion(validation.next_field, idea);
+        show(idea, validation.next_field, suggestion);
+        return;
+      }
+    }
+  }
+
+  // No context available - show empty sidebar with message
+  sidebarState = {
+    isVisible: true,
+    currentIdea: null,
+    currentField: null,
+    currentItems: [],
+    proposedItems: [],
+    editedItems: [],
+    isEditing: false
+  };
+
+  const container = getSidebarContainer();
+  container.innerHTML = `
+    <div class="contract-sidebar-header">
+      <div>
+        <h3 class="contract-sidebar-title">AI Panel</h3>
+        <div class="contract-sidebar-field">No contract selected</div>
+      </div>
+      <button class="contract-sidebar-close" title="Close sidebar">
+        <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/>
+        </svg>
+      </button>
+    </div>
+    <div class="contract-sidebar-body">
+      <div class="contract-sidebar-empty">
+        Select a contract node (#contract) to see suggestions here.
+      </div>
+    </div>
+  `;
+  container.classList.add('visible');
+  document.body.classList.add('contract-sidebar-open');
+
+  // Attach close handler
+  const closeBtn = container.querySelector('.contract-sidebar-close');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', () => hide());
+  }
 }
 
 /**
